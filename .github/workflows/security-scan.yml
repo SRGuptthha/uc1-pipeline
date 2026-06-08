@@ -1,0 +1,118 @@
+name: UC1 Supply Chain Security Scan
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'pipeline-output/run_pipeline.py'
+      - 'pipeline-output/policy.json'
+      - '.github/workflows/security-scan.yml'
+  schedule:
+    - cron: '0 2 * * 1'   # every Monday 02:00 UTC
+  workflow_dispatch:
+    inputs:
+      target_repo:
+        description: 'GitHub repo URL to scan'
+        required: false
+        default: 'https://github.com/SRGuptha/uc1-security-demo'
+      create_prs:
+        description: 'Create remediation PRs? (requires DEMO_REPO_PAT secret)'
+        required: false
+        default: 'false'
+        type: boolean
+
+jobs:
+  security-scan:
+    name: Supply Chain Security Pipeline
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout uc1-pipeline
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Determine scan target
+        id: target
+        run: |
+          REPO="${{ github.event.inputs.target_repo || 'https://github.com/SRGuptha/uc1-security-demo' }}"
+          echo "repo=$REPO" >> $GITHUB_OUTPUT
+
+      - name: Run pipeline (dry-run)
+        if: ${{ github.event.inputs.create_prs != 'true' }}
+        run: |
+          python pipeline-output/run_pipeline.py \
+            "${{ steps.target.outputs.repo }}" \
+            --out-dir pipeline-output
+
+      - name: Run pipeline (live — creates PRs)
+        if: ${{ github.event.inputs.create_prs == 'true' && secrets.DEMO_REPO_PAT != '' }}
+        env:
+          DEMO_REPO_PAT: ${{ secrets.DEMO_REPO_PAT }}
+        run: |
+          python pipeline-output/run_pipeline.py \
+            "${{ steps.target.outputs.repo }}" \
+            --out-dir pipeline-output \
+            --token "$DEMO_REPO_PAT"
+
+      - name: Policy gate — fail build on critical violations
+        run: |
+          python3 << 'PYEOF'
+          import json, sys
+          try:
+              r = json.load(open('pipeline-output/policy-report.json'))
+              fails = [v for v in r.get('violations', []) if v.get('action') == 'FAIL']
+              if fails:
+                  print(f'POLICY FAILED: {len(fails)} violation(s)')
+                  for v in fails:
+                      print(f"  [{v['policy_id']}] {v['detail']}")
+                  sys.exit(1)
+              print('POLICY PASSED')
+          except FileNotFoundError:
+              print('policy-report.json not found — skipping gate')
+          PYEOF
+
+      - name: Upload security artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: security-report-${{ github.run_number }}
+          path: |
+            pipeline-output/dependency-health-report.html
+            pipeline-output/audit-trail.json
+            pipeline-output/sbom-cyclonedx.json
+            pipeline-output/dependency-check-report.json
+            pipeline-output/policy-report.json
+            pipeline-output/secret-scan-report.json
+            pipeline-output/drift-report.json
+          retention-days: 90
+
+      - name: Print report summary
+        if: always()
+        run: |
+          python3 << 'PYEOF'
+          import json
+          try:
+              t = json.load(open('pipeline-output/audit-trail.json'))
+              h = t.get('pipeline_health', {})
+              c = t.get('cve_summary',     {})
+              print(f"")
+              print(f"  ══════════════════════════════════════════")
+              print(f"   SECURITY SCAN SUMMARY")
+              print(f"  ══════════════════════════════════════════")
+              print(f"   Repo    : {t.get('repo_url','—')}")
+              print(f"   Language: {t.get('language','—')} / {t.get('ecosystem','—')}")
+              print(f"   Grade   : {h.get('grade','—')}  ({h.get('score','—')}/100)  {h.get('label','')}")
+              print(f"   CVEs    : {c.get('total_cves',0)}  "
+                    f"(Critical: {c.get('critical_count',0)}, High: {c.get('high_count',0)})")
+              print(f"  ══════════════════════════════════════════")
+              for f in t.get('key_findings', []):
+                  print(f"   • {f}")
+          except Exception as e:
+              print(f'Could not read audit-trail.json: {e}')
+          PYEOF
