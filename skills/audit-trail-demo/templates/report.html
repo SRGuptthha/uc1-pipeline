@@ -228,6 +228,58 @@
   .fix-decision-summary span.skp { color: #94a3b8; }
   .fix-decision-summary span.und { color: var(--color-medium); }
 
+  /* Share button in header */
+  .btn-share-header {
+    padding: 0.5rem 1.1rem; border-radius: var(--radius); border: 1.5px solid rgba(255,255,255,0.35);
+    cursor: pointer; font-size: 0.88rem; font-weight: 600; background: rgba(255,255,255,0.12);
+    color: white; transition: background 0.15s; white-space: nowrap; flex-shrink: 0;
+  }
+  .btn-share-header:hover { background: rgba(255,255,255,0.22); }
+
+  /* Share modal */
+  .share-overlay {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.55);
+    z-index: 1000; align-items: center; justify-content: center;
+  }
+  .share-overlay.open { display: flex; }
+  .share-modal {
+    background: white; border-radius: 12px; padding: 2rem;
+    width: 540px; max-width: 95vw; box-shadow: 0 24px 64px rgba(0,0,0,0.3);
+  }
+  .share-modal h2 { font-size: 1.2rem; margin-bottom: 0.2rem; }
+  .share-subtitle { color: var(--color-muted); font-size: 0.85rem; margin-bottom: 1.5rem; }
+  .share-label { font-size: 0.85rem; font-weight: 600; display: block; margin-bottom: 0.35rem; }
+  .share-label span { font-weight: 400; color: var(--color-muted); }
+  .share-input {
+    width: 100%; padding: 0.6rem 0.75rem; border: 1px solid var(--color-border);
+    border-radius: var(--radius); font-size: 0.88rem; font-family: inherit;
+    margin-bottom: 1rem; background: var(--color-bg); resize: vertical;
+  }
+  .share-input:focus { outline: 2px solid var(--color-accent); border-color: transparent; }
+  .share-summary-box {
+    background: var(--color-bg); border-radius: var(--radius);
+    padding: 0.75rem 1rem; font-size: 0.82rem; color: var(--color-muted);
+    margin-bottom: 1.25rem; border: 1px solid var(--color-border); line-height: 1.6;
+  }
+  .share-footer { display: flex; gap: 0.75rem; justify-content: flex-end; flex-wrap: wrap; }
+  .btn-share-send {
+    padding: 0.55rem 1.25rem; border-radius: var(--radius); border: none;
+    cursor: pointer; font-size: 0.9rem; font-weight: 700;
+    background: var(--color-accent); color: white; transition: opacity 0.15s;
+  }
+  .btn-share-send:hover { opacity: 0.85; }
+  .btn-share-cancel {
+    padding: 0.55rem 1.1rem; border-radius: var(--radius);
+    border: 1px solid var(--color-border); cursor: pointer;
+    font-size: 0.9rem; background: white; color: var(--color-text);
+  }
+  .share-howto {
+    margin-top: 1rem; padding: 0.75rem 1rem; background: #eff6ff;
+    border-radius: var(--radius); font-size: 0.78rem; color: #1d4ed8; line-height: 1.65;
+    border: 1px solid #bfdbfe;
+  }
+  .share-howto strong { display: block; margin-bottom: 0.3rem; }
+
   /* Print / PDF */
   @media print {
     .tabs, .tab, .pr-review-panel { display: none; }
@@ -244,8 +296,13 @@ window.REPORT_DATA = null; /* INJECT_REPORT_DATA_HERE */
 </script>
 
 <div class="report-header">
-  <h1>🔐 Dependency Health Report</h1>
-  <div class="meta" id="meta-line">Loading...</div>
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:1rem">
+    <div>
+      <h1>🔐 Dependency Health Report</h1>
+      <div class="meta" id="meta-line">Loading...</div>
+    </div>
+    <button class="btn-share-header" onclick="openShareModal()">📧 Share Report</button>
+  </div>
   <div class="health-score-block">
     <div class="score-circle" id="score-circle">–</div>
     <div>
@@ -383,6 +440,39 @@ window.REPORT_DATA = null; /* INJECT_REPORT_DATA_HERE */
       <thead><tr><th>Test</th><th>Status</th><th>Detail</th></tr></thead>
       <tbody id="unit-test-tbody"></tbody>
     </table>
+  </div>
+</div>
+
+<!-- Share Modal -->
+<div class="share-overlay" id="share-overlay" onclick="closeShareModal(event)">
+  <div class="share-modal">
+    <h2>📧 Share Report</h2>
+    <p class="share-subtitle">Recipients open the attached HTML file in any browser and can approve or reject fixes directly.</p>
+
+    <label class="share-label" for="share-emails">
+      Recipient email addresses <span>(comma-separated)</span>
+    </label>
+    <input type="text" class="share-input" id="share-emails"
+           placeholder="alice@company.com, bob@company.com">
+
+    <label class="share-label" for="share-message">Optional message</label>
+    <textarea class="share-input" id="share-message" rows="3"
+              placeholder="Please review the attached security report and approve or reject the proposed fixes."></textarea>
+
+    <div class="share-summary-box" id="share-summary-box">Loading report summary…</div>
+
+    <div class="share-footer">
+      <button class="btn-share-cancel" onclick="closeShareModal()">Cancel</button>
+      <button class="btn-share-send" onclick="downloadAndShare()">
+        ⬇ Download &amp; Open Email Client
+      </button>
+    </div>
+    <div class="share-howto">
+      <strong>How it works</strong>
+      1. Clicking the button saves the full report as <em>dependency-health-report.html</em> and opens your email client.<br>
+      2. Attach the downloaded file to the email and send.<br>
+      3. Recipients open the HTML file in any browser, scroll to <strong>Approve / Reject</strong>, enter their GitHub token, and submit the review.
+    </div>
   </div>
 </div>
 
@@ -796,6 +886,85 @@ async function submitReview(event) {
     document.getElementById('btn-approve').disabled = false;
     document.getElementById('btn-reject').disabled  = false;
   }
+}
+
+// ─── Share Modal ──────────────────────────────────────────────────────────────
+
+function openShareModal() {
+  const data = window.REPORT_DATA;
+  if (data) {
+    const c  = data.cve_summary       || {};
+    const r  = data.remediation_summary || {};
+    const ph = data.pipeline_health   || {};
+    document.getElementById('share-summary-box').innerHTML =
+      `<strong>${data.project || 'Security Report'}</strong> &nbsp;·&nbsp; Scan: ${data.scan_date || '—'}<br>` +
+      `Grade: <strong>${ph.grade || '—'}</strong> (Score: ${ph.score || '—'}) &nbsp;·&nbsp; ` +
+      `CVEs: <strong>${c.total_cves || 0}</strong> ` +
+      `(Critical: <strong style="color:#dc2626">${c.critical_count || 0}</strong>, ` +
+      `High: <strong style="color:#ea580c">${c.high_count || 0}</strong>) &nbsp;·&nbsp; ` +
+      `Fixes proposed: <strong>${(r.upgrades || []).length}</strong>`;
+  }
+  document.getElementById('share-overlay').classList.add('open');
+  document.getElementById('share-emails').focus();
+}
+
+function closeShareModal(event) {
+  if (event && event.target !== document.getElementById('share-overlay')) return;
+  document.getElementById('share-overlay').classList.remove('open');
+}
+
+function downloadAndShare() {
+  const emails  = document.getElementById('share-emails').value.trim();
+  const userMsg = document.getElementById('share-message').value.trim() ||
+    'Please review the attached dependency security report and approve or reject the proposed fixes.';
+
+  const data = window.REPORT_DATA || {};
+  const c    = data.cve_summary         || {};
+  const r    = data.remediation_summary || {};
+  const ph   = data.pipeline_health     || {};
+
+  // Download the full self-contained HTML file
+  const blob = new Blob([document.documentElement.outerHTML], { type: 'text/html' });
+  const dlUrl = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href     = dlUrl;
+  a.download = 'dependency-health-report.html';
+  a.click();
+  URL.revokeObjectURL(dlUrl);
+
+  // Build mailto: with report summary in body
+  const subject = encodeURIComponent(
+    `[Action Required] Security Report — ${data.project || 'Dependency Health'} — Grade ${ph.grade || '?'}`
+  );
+
+  const fixes = (r.upgrades || []).map(u =>
+    `  • ${u.artifact}  ${u.old_version} → ${u.new_version}  (fixes: ${(u.cves_fixed||[]).join(', ')||'—'})`
+  ).join('\n');
+
+  const body = encodeURIComponent(
+    `${userMsg}\n\n` +
+    `──────────────────────────────────\n` +
+    `PROJECT   : ${data.project || '—'}\n` +
+    `SCAN DATE : ${data.scan_date || '—'}\n` +
+    `GRADE     : ${ph.grade || '—'}  (Score: ${ph.score || '—'})\n` +
+    `──────────────────────────────────\n` +
+    `CVEs Found     : ${c.total_cves || 0}  ` +
+      `(Critical: ${c.critical_count || 0}, High: ${c.high_count || 0})\n` +
+    `Fixes Proposed : ${(r.upgrades||[]).length}\n` +
+    (fixes ? `\nProposed upgrades:\n${fixes}\n` : '') +
+    `──────────────────────────────────\n\n` +
+    `HOW TO REVIEW:\n` +
+    `1. Open the attached dependency-health-report.html in your browser\n` +
+    `2. Scroll to the "Approve / Reject" section on the Executive Summary tab\n` +
+    `3. Accept or skip individual fixes using the buttons in the table\n` +
+    `4. Enter your GitHub Personal Access Token (repo scope) and click Approve\n\n` +
+    `Report generated by UC1 Supply Chain Security Pipeline.`
+  );
+
+  const to = emails.replace(/\s+/g, '');
+  window.location.href = `mailto:${to}?subject=${subject}&body=${body}`;
+
+  document.getElementById('share-overlay').classList.remove('open');
 }
 </script>
 </body>
