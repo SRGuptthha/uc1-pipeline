@@ -45,16 +45,23 @@ jobs:
 
       - name: Pre-fetch manifest from target repo
         run: |
+          set -e
           OWNER=$(echo "${{ steps.target.outputs.repo }}" | sed 's|https://github.com/||' | cut -d'/' -f1)
           REPO=$(echo  "${{ steps.target.outputs.repo }}" | sed 's|https://github.com/||' | cut -d'/' -f2)
-          echo "Scanning $OWNER/$REPO for manifest..."
+          echo "Target: $OWNER/$REPO"
+          echo "Out dir contents before fetch:"
+          ls -la pipeline-output/ | head -20
+
           FOUND=0
           for manifest in pom.xml requirements.txt pyproject.toml package.json Gemfile go.mod; do
             for branch in main master; do
-              HTTP=$(curl -s -w "%{http_code}" -o "pipeline-output/$manifest" \
-                "https://raw.githubusercontent.com/$OWNER/$REPO/$branch/$manifest")
+              URL="https://raw.githubusercontent.com/$OWNER/$REPO/$branch/$manifest"
+              echo "Trying: $URL"
+              HTTP=$(curl -sL -w "%{http_code}" -o "pipeline-output/$manifest" "$URL")
+              echo "  → HTTP $HTTP"
               if [ "$HTTP" = "200" ]; then
-                echo "✓ Downloaded $manifest from branch '$branch'"
+                SIZE=$(wc -c < "pipeline-output/$manifest")
+                echo "✓ Downloaded $manifest ($SIZE bytes) from $branch"
                 FOUND=1
                 break 2
               else
@@ -62,8 +69,13 @@ jobs:
               fi
             done
           done
+
+          echo "Out dir after fetch:"
+          ls -la pipeline-output/ | head -20
+
           if [ "$FOUND" = "0" ]; then
-            echo "WARNING: No manifest file found in $OWNER/$REPO"
+            echo "ERROR: Could not download any manifest from $OWNER/$REPO"
+            exit 1
           fi
 
       - name: Run pipeline (dry-run)

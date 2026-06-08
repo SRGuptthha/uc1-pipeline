@@ -571,31 +571,31 @@ def detect_language(owner, repo, token=None, out_dir=None):
     """
     Auto-detect the repo's primary language from its manifest files.
     Returns (language, ecosystem, manifest_filename, manifest_content, used_branch).
-    Probes GitHub first so stale local files from prior runs don't interfere.
-    Falls back to local directory for offline fixtures (e.g. injected .csproj).
+    Checks local out_dir first (pre-fetched manifests in CI), then probes GitHub.
     """
-    # 1. Probe GitHub (primary path)
-    for fname, lang in MANIFEST_CANDIDATES:
-        content, branch = _fetch_raw_github(owner, repo, fname, token)
-        if content:
-            return lang, ECOSYSTEM_MAP[lang], fname, content, branch
-
-    # 2. Scan GitHub tree for *.csproj
-    fname, content, branch = _find_csproj_github(owner, repo, token)
-    if content:
-        return "dotnet", "NuGet", fname, content, branch
-
-    # 3. Local fallback — offline mode or injected test fixtures (e.g. .csproj)
+    # 1. Local directory — pre-fetched manifests (CI) or offline fixtures
     if out_dir and os.path.isdir(out_dir):
         for fname, lang in MANIFEST_CANDIDATES:
             local = os.path.join(out_dir, fname)
             if os.path.exists(local):
+                print(f"  [detect] Using local {fname}")
                 with open(local, encoding="utf-8") as fh:
                     return lang, ECOSYSTEM_MAP[lang], fname, fh.read(), "local"
         for f in os.listdir(out_dir):
             if f.endswith(".csproj"):
                 with open(os.path.join(out_dir, f), encoding="utf-8") as fh:
                     return "dotnet", "NuGet", f, fh.read(), "local"
+
+    # 2. Probe GitHub
+    for fname, lang in MANIFEST_CANDIDATES:
+        content, branch = _fetch_raw_github(owner, repo, fname, token)
+        if content:
+            return lang, ECOSYSTEM_MAP[lang], fname, content, branch
+
+    # 3. GitHub tree scan for *.csproj
+    fname, content, branch = _find_csproj_github(owner, repo, token)
+    if content:
+        return "dotnet", "NuGet", fname, content, branch
 
     return None, None, None, None, None
 
