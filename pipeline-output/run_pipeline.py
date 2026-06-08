@@ -22,14 +22,16 @@ _SSL_CTX.verify_mode    = ssl.CERT_NONE
 # Args & Setup
 # ─────────────────────────────────────────────────────────────
 if len(sys.argv) < 2:
-    print("Usage: python run_pipeline.py <github-url> [--token GITHUB_PAT]")
+    print("Usage: python run_pipeline.py <github-url> [--token GITHUB_PAT] [--scan-only]")
     print("Example: python run_pipeline.py https://github.com/WebGoat/WebGoat --token ghp_xxxx")
+    print("         --scan-only  use token for reading only; skip PR creation (for CI)")
     sys.exit(1)
 
 github_url    = sys.argv[1].rstrip("/")
 github_token  = None
 out_dir_arg   = None
 e2e_repos     = []
+scan_only     = False
 args          = sys.argv[2:]
 i = 0
 while i < len(args):
@@ -40,6 +42,8 @@ while i < len(args):
         out_dir_arg = args[i + 1]; i += 2
     elif a == "--e2e-repos" and i + 1 < len(args):
         e2e_repos = [u.strip() for u in args[i + 1].split(",") if u.strip()]; i += 2
+    elif a == "--scan-only":
+        scan_only = True; i += 1
     else:
         i += 1
 
@@ -1716,7 +1720,7 @@ all_cve_ids = list(dict.fromkeys(c for u in upgrades for c in u["cves_fixed"]))
 has_major   = any(u["bump_type"] == "MAJOR" for u in upgrades)
 pr_result: dict = {}
 
-if github_token and upgrades:
+if github_token and upgrades and not scan_only:
     print("  Creating consolidated PR on GitHub...", end=" ", flush=True)
     pr_result = create_consolidated_pr(
         github_token, owner, repo, upgrades, patched_manifest,

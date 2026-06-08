@@ -45,10 +45,14 @@ jobs:
 
       - name: Run pipeline (dry-run)
         if: github.event.inputs.create_prs != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           python pipeline-output/run_pipeline.py \
             "${{ steps.target.outputs.repo }}" \
-            --out-dir pipeline-output
+            --out-dir pipeline-output \
+            --token "$GH_TOKEN" \
+            --scan-only
 
       - name: Run pipeline (live — creates PRs)
         if: github.event.inputs.create_prs == 'true'
