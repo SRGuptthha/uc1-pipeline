@@ -228,6 +228,37 @@
   .fix-decision-summary span.skp { color: #94a3b8; }
   .fix-decision-summary span.und { color: var(--color-medium); }
 
+  /* Approval mode hint */
+  .approval-hint {
+    display: flex; align-items: flex-start; gap: 0.6rem;
+    padding: 0.6rem 0.85rem; border-radius: var(--radius);
+    font-size: 0.82rem; margin-bottom: 0.9rem; line-height: 1.5;
+    background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe;
+  }
+  .approval-hint.hint-github {
+    background: #f0fdf4; color: #15803d; border-color: #bbf7d0;
+  }
+  .approval-hint .hint-icon { font-size: 1rem; flex-shrink: 0; margin-top: 0.05rem; }
+
+  /* Collapsible GitHub token section */
+  .gh-token-details {
+    margin-top: 1rem; border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+  }
+  .gh-token-details summary {
+    padding: 0.55rem 0.85rem; cursor: pointer; font-size: 0.82rem;
+    color: var(--color-muted); background: var(--color-bg);
+    border-radius: var(--radius); list-style: none; user-select: none;
+    display: flex; align-items: center; gap: 0.4rem;
+  }
+  .gh-token-details summary::-webkit-details-marker { display: none; }
+  .gh-token-details summary::before {
+    content: '▶'; font-size: 0.65rem; transition: transform 0.15s; display: inline-block;
+  }
+  .gh-token-details[open] summary::before { transform: rotate(90deg); }
+  .gh-token-details summary:hover { color: var(--color-accent); }
+  .gh-token-inner { padding: 0.75rem 0.85rem 0.85rem; }
+
   /* Share button in header */
   .btn-share-header {
     padding: 0.5rem 1.1rem; border-radius: var(--radius); border: 1.5px solid rgba(255,255,255,0.35);
@@ -370,32 +401,50 @@ window.REPORT_DATA = null; /* INJECT_REPORT_DATA_HERE */
     </div>
     <div class="fix-decision-summary" id="fix-decision-summary"></div>
 
-    <!-- GitHub token connect row -->
-    <div id="token-connect-row" class="token-row">
-      <label for="gh-token-input">GitHub Token:</label>
-      <input type="password" id="gh-token-input"
-             placeholder="ghp_… or github_pat_… (stored only in this browser tab)">
-      <button class="btn-connect" onclick="connectToken()">Connect</button>
+    <!-- Approval mode hint (swaps based on token state) -->
+    <div class="approval-hint" id="approval-hint-email">
+      <span class="hint-icon">📧</span>
+      <span>
+        <strong>No GitHub token needed.</strong> Clicking Approve or Request Changes will open
+        your email client with your decision pre-filled — simply address it to the report owner and send.
+      </span>
     </div>
-    <div id="token-connected-row" style="display:none;margin-bottom:1rem">
-      <span class="connected-badge">&#10003; GitHub connected</span>
-      <button class="btn-clear" style="margin-left:0.75rem" onclick="clearToken()">Disconnect</button>
+    <div class="approval-hint hint-github" id="approval-hint-github" style="display:none">
+      <span class="hint-icon">✅</span>
+      <span><strong>GitHub connected.</strong> Your decision will be submitted directly to the PR via the GitHub API.</span>
     </div>
 
-    <!-- Review actions -->
+    <!-- Review actions — always enabled, token not required -->
     <div class="review-actions" id="review-actions">
       <textarea class="review-comment" id="review-comment"
-                placeholder="Optional comment for the PR review…"></textarea>
+                placeholder="Optional comment…"></textarea>
       <div class="review-btns">
         <button class="btn-approve" id="btn-approve" onclick="submitReview('APPROVE')">
           ✓&nbsp;Approve
         </button>
-        <button class="btn-reject"  id="btn-reject"  onclick="submitReview('REQUEST_CHANGES')">
+        <button class="btn-reject" id="btn-reject" onclick="submitReview('REQUEST_CHANGES')">
           ✗&nbsp;Request Changes
         </button>
       </div>
     </div>
     <div class="review-status" id="review-status"></div>
+
+    <!-- Optional GitHub direct submission (collapsible) -->
+    <details class="gh-token-details" id="gh-token-details">
+      <summary>🔗 Connect GitHub token to submit directly to PR (optional — for engineers)</summary>
+      <div class="gh-token-inner">
+        <div id="token-connect-row" class="token-row">
+          <label for="gh-token-input">GitHub Token:</label>
+          <input type="password" id="gh-token-input"
+                 placeholder="ghp_… or github_pat_… (stored only in this browser tab)">
+          <button class="btn-connect" onclick="connectToken()">Connect</button>
+        </div>
+        <div id="token-connected-row" style="display:none">
+          <span class="connected-badge">&#10003; GitHub connected</span>
+          <button class="btn-clear" style="margin-left:0.75rem" onclick="clearToken()">Disconnect</button>
+        </div>
+      </div>
+    </details>
   </div>
 </div>
 
@@ -723,11 +772,9 @@ function renderPRPanel(data) {
   // Store upgrade count for decision tracking
   window._fixCount = upgrades.length;
 
-  // Disable approve/reject in dry-run
+  // Dry-run note (informational only — buttons remain enabled for email approval)
   if (isDry) {
-    document.getElementById('btn-approve').disabled = true;
-    document.getElementById('btn-reject').disabled  = true;
-    setStatus('info', 'Run the pipeline with --token to create a real PR, then approve/reject here.');
+    setStatus('info', 'Dry-run mode: no real PR exists yet. You can still send your approval decision by email.');
   }
 
   // Token state
@@ -736,8 +783,16 @@ function renderPRPanel(data) {
 
 function restoreTokenState() {
   const tok = sessionStorage.getItem('uc1_gh_token');
-  document.getElementById('token-connect-row').style.display    = tok ? 'none'  : 'flex';
-  document.getElementById('token-connected-row').style.display  = tok ? 'block' : 'none';
+  document.getElementById('token-connect-row').style.display   = tok ? 'none'  : 'flex';
+  document.getElementById('token-connected-row').style.display = tok ? 'block' : 'none';
+  // Swap the approval mode hint
+  const emailHint  = document.getElementById('approval-hint-email');
+  const githubHint = document.getElementById('approval-hint-github');
+  if (emailHint)  emailHint.style.display  = tok ? 'none'  : 'flex';
+  if (githubHint) githubHint.style.display = tok ? 'flex'  : 'none';
+  // Keep the details open when connected
+  const details = document.getElementById('gh-token-details');
+  if (details && tok) details.open = true;
 }
 
 function connectToken() {
@@ -811,44 +866,86 @@ function setStatus(type, msg) {
 async function submitReview(event) {
   const data = window.REPORT_DATA;
   if (!data) return;
-
-  const token = sessionStorage.getItem('uc1_gh_token');
-  if (!token) {
-    setStatus('warning', 'Paste your GitHub token above and click Connect first.');
-    return;
-  }
-
   const upgrades = (data.remediation_summary || {}).upgrades || [];
   if (!upgrades.length) return;
 
-  const prNum  = upgrades[0].pr_number;
-  const prUrl  = upgrades[0].pr_url || '';
+  const token    = sessionStorage.getItem('uc1_gh_token');
+  const accepted = upgrades.filter((_, i) => fixDecisions[i] === 'accepted');
+  const skipped  = upgrades.filter((_, i) => fixDecisions[i] === 'skipped');
+  const comment  = document.getElementById('review-comment').value.trim();
+
+  if (token) {
+    await _submitToGitHub(event, token, data, upgrades, accepted, skipped, comment);
+  } else {
+    _submitByEmail(event, data, upgrades, accepted, skipped, comment);
+  }
+}
+
+function _submitByEmail(event, data, upgrades, accepted, skipped, comment) {
+  const isApprove   = event === 'APPROVE';
+  const decisionWord = isApprove ? 'APPROVED' : 'CHANGES REQUESTED';
+  const ph = data.pipeline_health || {};
+  const c  = data.cve_summary     || {};
+
+  const fixLines = upgrades.map((u, i) => {
+    const d    = fixDecisions[i] || 'undecided';
+    const icon = d === 'accepted' ? '✓ Accept' : d === 'skipped' ? '✗ Skip' : '— Undecided';
+    return `  ${icon}  ${u.artifact}  ${u.old_version} → ${u.new_version}` +
+           ((u.cves_fixed||[]).length ? `  (fixes: ${u.cves_fixed.join(', ')})` : '');
+  }).join('\n');
+
+  const autoComment = isApprove
+    ? 'Approved — please proceed with merging the security fixes as marked below.'
+    : 'Changes requested — please review the items marked below before merging.';
+
+  const subject = encodeURIComponent(
+    `[${decisionWord}] Security Report — ${data.project || 'Dependency Health'}`
+  );
+  const body = encodeURIComponent(
+    `DECISION: ${decisionWord}\n\n` +
+    `${comment || autoComment}\n\n` +
+    `──────────────────────────────\n` +
+    `PROJECT   : ${data.project || '—'}\n` +
+    `GRADE     : ${ph.grade || '—'}  (Score: ${ph.score || '—'})\n` +
+    `CVEs Found: ${c.total_cves || 0}  ` +
+      `(Critical: ${c.critical_count || 0}, High: ${c.high_count || 0})\n` +
+    `──────────────────────────────\n` +
+    `Fix Decisions:\n${fixLines}\n` +
+    `──────────────────────────────\n\n` +
+    `Reviewed via UC1 Supply Chain Security Pipeline report.`
+  );
+
+  window.location.href = `mailto:?subject=${subject}&body=${body}`;
+  setStatus(
+    isApprove ? 'success' : 'warning',
+    `${isApprove ? '✓ Approved' : '✗ Changes Requested'} — your email client has opened with the decision pre-filled. Address it to the report owner and send.`
+  );
+}
+
+async function _submitToGitHub(event, token, data, upgrades, accepted, skipped, comment) {
+  const prNum = upgrades[0].pr_number;
+  const prUrl = upgrades[0].pr_url || '';
   if (!prNum || prUrl.includes('DRY-RUN')) {
     setStatus('warning', 'No real GitHub PR exists yet — run the pipeline with --token to create one.');
     return;
   }
 
-  // Parse owner/repo from repo_url
   const repoPath = (data.repo_url || '').replace('https://github.com/', '').replace(/\/$/, '');
   const [owner, repo] = repoPath.split('/');
   if (!owner || !repo) { setStatus('error', 'Could not determine repo from report data.'); return; }
 
-  // Build comment — include per-fix decisions when any are set
-  const accepted = upgrades.filter((_, i) => fixDecisions[i] === 'accepted');
-  const skipped  = upgrades.filter((_, i) => fixDecisions[i] === 'skipped');
   let autoComment = '';
   if (event === 'APPROVE') {
     autoComment = 'Approved via UC1 Supply Chain Security Pipeline report.';
     if (accepted.length) autoComment += '\n\n**Accepted fixes:**\n' +
       accepted.map(u => `- \`${u.artifact}\` ${u.old_version} → ${u.new_version} (fixes: ${(u.cves_fixed||[]).join(', ')||'—'})`).join('\n');
-    if (skipped.length)  autoComment += '\n\n**Skipped (manual review needed):**\n' +
+    if (skipped.length) autoComment += '\n\n**Skipped (manual review needed):**\n' +
       skipped.map(u => `- \`${u.artifact}\` — ${u.old_version} → ${u.new_version}`).join('\n');
   } else {
     autoComment = 'Changes requested via UC1 Supply Chain Security Pipeline report.';
-    if (skipped.length) autoComment += '\n\nThe following upgrades need further review before merging:\n' +
+    if (skipped.length) autoComment += '\n\nThe following upgrades need further review:\n' +
       skipped.map(u => `- \`${u.artifact}\` ${u.old_version} → ${u.new_version}`).join('\n');
   }
-  const comment = document.getElementById('review-comment').value.trim() || autoComment;
 
   document.getElementById('btn-approve').disabled = true;
   document.getElementById('btn-reject').disabled  = true;
@@ -865,19 +962,16 @@ async function submitReview(event) {
           'X-GitHub-Api-Version': '2022-11-28',
           'Content-Type':         'application/json',
         },
-        body: JSON.stringify({ event, body: comment }),
+        body: JSON.stringify({ event, body: comment || autoComment }),
       }
     );
-
     if (resp.ok) {
       const label = event === 'APPROVE' ? '✓ PR Approved!' : '✗ Changes Requested';
       setStatus(event === 'APPROVE' ? 'success' : 'warning', `${label} — GitHub has been updated.`);
-      // Dim the panel to signal action is done
       document.getElementById('pr-review-panel').style.opacity = '0.7';
     } else {
       const err = await resp.json().catch(() => ({}));
-      const msg = err.message || `HTTP ${resp.status}`;
-      setStatus('error', `GitHub API error: ${msg}`);
+      setStatus('error', `GitHub API error: ${err.message || 'HTTP ' + resp.status}`);
       document.getElementById('btn-approve').disabled = false;
       document.getElementById('btn-reject').disabled  = false;
     }
