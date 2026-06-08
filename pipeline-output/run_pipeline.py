@@ -507,11 +507,30 @@ MVN_NS = "http://maven.apache.org/POM/4.0.0"
 
 
 def _fetch_raw_github(owner, repo, filename, token=None):
-    """Fetch a file from GitHub raw. Returns (content, branch) or (None, None)."""
+    """Fetch a file from GitHub. Returns (content, branch) or (None, None)."""
     hdrs = {"User-Agent": "UC1-Pipeline/1.0"}
     if token:
         hdrs["Authorization"] = f"Bearer {token}"
-    for branch in ["HEAD", "main", "master", "develop"]:
+
+    # Primary (when token available): GitHub Contents API — authenticated,
+    # high rate-limit, works reliably from CI runners.
+    if token:
+        try:
+            content = http_get(
+                f"https://api.github.com/repos/{owner}/{repo}/contents/{filename}",
+                headers={**hdrs,
+                         "Accept": "application/vnd.github.raw+json",
+                         "X-GitHub-Api-Version": "2022-11-28"},
+                timeout=15)
+            return content, "main"
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                return None, None   # file genuinely absent — stop here
+        except Exception:
+            pass  # API unreachable — fall through to raw CDN
+
+    # Fallback: raw.githubusercontent.com (unauthenticated / no token)
+    for branch in ["main", "master", "HEAD", "develop"]:
         try:
             content = http_get(
                 f"https://raw.githubusercontent.com/{owner}/{repo}/{branch}/{filename}",
