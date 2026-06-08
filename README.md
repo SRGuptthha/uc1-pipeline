@@ -222,3 +222,5 @@ to run the full gate suite where Maven is available.
 **Health score unexpectedly low** — Check `secret-scan-report.json` for false-positive
 secrets (common with test data). Add patterns to `.gitleaks.toml` allow-list to
 suppress them.
+
+<!-- last verified: 2026-06-08 21:40 -->
