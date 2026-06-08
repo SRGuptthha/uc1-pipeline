@@ -1,0 +1,802 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dependency Health Report — {{PROJECT_NAME}}</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<style>
+  :root {
+    --color-critical: #dc2626;
+    --color-high:     #ea580c;
+    --color-medium:   #ca8a04;
+    --color-low:      #16a34a;
+    --color-pass:     #16a34a;
+    --color-fail:     #dc2626;
+    --color-bg:       #f8fafc;
+    --color-card:     #ffffff;
+    --color-border:   #e2e8f0;
+    --color-text:     #1e293b;
+    --color-muted:    #64748b;
+    --color-accent:   #3b82f6;
+    --radius:         8px;
+    --shadow:         0 1px 3px rgba(0,0,0,0.1);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+         background: var(--color-bg); color: var(--color-text); line-height: 1.6; }
+
+  /* Header */
+  .report-header { background: #1e293b; color: white; padding: 2rem 3rem; }
+  .report-header h1 { font-size: 1.75rem; font-weight: 700; }
+  .report-header .meta { color: #94a3b8; font-size: 0.9rem; margin-top: 0.25rem; }
+
+  /* Health Score */
+  .health-score-block { display: flex; align-items: center; gap: 1.5rem;
+                         margin-top: 1.5rem; }
+  .score-circle { width: 80px; height: 80px; border-radius: 50%;
+                  display: flex; flex-direction: column; align-items: center;
+                  justify-content: center; font-weight: 700; color: white;
+                  font-size: 1.5rem; }
+  .score-circle.grade-A, .score-circle.grade-B { background: var(--color-low); }
+  .score-circle.grade-C { background: var(--color-medium); }
+  .score-circle.grade-D, .score-circle.grade-F { background: var(--color-critical); }
+  .score-label { color: #cbd5e1; font-size: 0.85rem; }
+
+  /* Tabs */
+  .tabs { display: flex; gap: 0; border-bottom: 2px solid var(--color-border);
+          background: white; padding: 0 3rem; }
+  .tab { padding: 1rem 1.5rem; cursor: pointer; font-weight: 500;
+         color: var(--color-muted); border-bottom: 3px solid transparent;
+         margin-bottom: -2px; transition: all 0.2s; }
+  .tab.active { color: var(--color-accent); border-bottom-color: var(--color-accent); }
+  .tab-content { display: none; padding: 2rem 3rem; }
+  .tab-content.active { display: block; }
+
+  /* KPI Cards */
+  .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem;
+              margin-bottom: 2rem; }
+  .kpi-card { background: var(--color-card); border-radius: var(--radius);
+              padding: 1.25rem; box-shadow: var(--shadow);
+              border-left: 4px solid var(--color-accent); }
+  .kpi-card.critical { border-left-color: var(--color-critical); }
+  .kpi-card.pass { border-left-color: var(--color-pass); }
+  .kpi-value { font-size: 2rem; font-weight: 700; line-height: 1; }
+  .kpi-label { color: var(--color-muted); font-size: 0.85rem; margin-top: 0.25rem; }
+
+  /* Charts */
+  .charts-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;
+                margin-bottom: 2rem; }
+  .chart-card { background: var(--color-card); border-radius: var(--radius);
+                padding: 1.25rem; box-shadow: var(--shadow); }
+  .chart-card h3 { font-size: 0.95rem; color: var(--color-muted);
+                   margin-bottom: 1rem; text-transform: uppercase; letter-spacing: 0.05em; }
+  .chart-card canvas { max-height: 220px; }
+
+  /* Key Findings */
+  .findings-list { list-style: none; }
+  .findings-list li { padding: 0.75rem 1rem; border-radius: var(--radius);
+                      background: var(--color-card); margin-bottom: 0.5rem;
+                      box-shadow: var(--shadow); font-size: 0.95rem; }
+
+  /* Tables */
+  .table-card { background: var(--color-card); border-radius: var(--radius);
+                box-shadow: var(--shadow); overflow: hidden; margin-bottom: 1.5rem; }
+  .table-card h3 { padding: 1rem 1.25rem; font-size: 0.95rem;
+                   border-bottom: 1px solid var(--color-border);
+                   text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-muted); }
+  table { width: 100%; border-collapse: collapse; }
+  th { background: var(--color-bg); padding: 0.75rem 1rem; text-align: left;
+       font-size: 0.8rem; text-transform: uppercase; color: var(--color-muted);
+       letter-spacing: 0.05em; border-bottom: 1px solid var(--color-border); }
+  td { padding: 0.75rem 1rem; font-size: 0.9rem;
+       border-bottom: 1px solid var(--color-border); }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #f8fafc; }
+
+  /* Badges */
+  .badge { display: inline-block; padding: 0.2rem 0.6rem; border-radius: 999px;
+           font-size: 0.75rem; font-weight: 600; }
+  .badge-critical { background: #fee2e2; color: var(--color-critical); }
+  .badge-high     { background: #ffedd5; color: var(--color-high); }
+  .badge-medium   { background: #fef9c3; color: var(--color-medium); }
+  .badge-low      { background: #dcfce7; color: var(--color-low); }
+  .badge-pass     { background: #dcfce7; color: var(--color-pass); }
+  .badge-fail     { background: #fee2e2; color: var(--color-fail); }
+  .badge-major    { background: #fee2e2; color: var(--color-critical); }
+  .badge-minor    { background: #fef9c3; color: var(--color-medium); }
+  .badge-patch    { background: #dcfce7; color: var(--color-low); }
+
+  /* Section heading */
+  .section-title { font-size: 1.1rem; font-weight: 600; margin: 1.5rem 0 0.75rem; }
+
+  /* Timeline */
+  .timeline { display: flex; align-items: center; gap: 0; margin-bottom: 2rem; }
+  .tl-step { flex: 1; text-align: center; padding: 1rem;
+             background: var(--color-card); border: 1px solid var(--color-border); }
+  .tl-step:first-child { border-radius: var(--radius) 0 0 var(--radius); }
+  .tl-step:last-child  { border-radius: 0 var(--radius) var(--radius) 0; }
+  .tl-step .icon { font-size: 1.5rem; }
+  .tl-step .label { font-size: 0.75rem; color: var(--color-muted); margin-top: 0.25rem; }
+  .tl-step.pass { border-top: 3px solid var(--color-pass); }
+  .tl-step.fail { border-top: 3px solid var(--color-critical); }
+
+  /* PR Review Panel */
+  .pr-review-panel {
+    background: var(--color-card);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    border: 2px solid var(--color-border);
+    padding: 1.5rem;
+    margin-bottom: 2rem;
+  }
+  .pr-review-panel.live  { border-color: var(--color-accent); }
+  .pr-review-panel.dry   { border-color: var(--color-border); opacity: 0.85; }
+
+  .pr-panel-header { display: flex; align-items: center; gap: 1rem; margin-bottom: 1.25rem; flex-wrap: wrap; }
+  .pr-panel-header h3  { font-size: 1rem; font-weight: 700; margin: 0; }
+  .pr-panel-header a   { font-size: 0.85rem; color: var(--color-accent); text-decoration: none; }
+  .pr-panel-header a:hover { text-decoration: underline; }
+  .pr-dry-tag { font-size: 0.75rem; color: var(--color-muted);
+                background: var(--color-bg); padding: 0.2rem 0.6rem;
+                border-radius: 999px; border: 1px solid var(--color-border); }
+
+  /* Token connect row */
+  .token-row { display: flex; gap: 0.75rem; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; }
+  .token-row label { font-size: 0.82rem; color: var(--color-muted); white-space: nowrap; }
+  .token-row input {
+    flex: 1; min-width: 220px; padding: 0.45rem 0.75rem;
+    border: 1px solid var(--color-border); border-radius: var(--radius);
+    font-size: 0.85rem; font-family: monospace; background: var(--color-bg);
+  }
+  .token-row input:focus { outline: 2px solid var(--color-accent); border-color: transparent; }
+  .btn-connect {
+    padding: 0.45rem 1rem; border-radius: var(--radius); border: none; cursor: pointer;
+    font-size: 0.85rem; font-weight: 600;
+    background: var(--color-accent); color: white;
+  }
+  .btn-connect:hover { opacity: 0.88; }
+  .connected-badge {
+    display: inline-flex; align-items: center; gap: 0.4rem;
+    font-size: 0.82rem; color: var(--color-pass);
+    background: #dcfce7; padding: 0.3rem 0.75rem; border-radius: 999px;
+  }
+
+  /* Upgrade summary inside panel */
+  .pr-upgrade-table { width: 100%; border-collapse: collapse; margin-bottom: 1.25rem; font-size: 0.85rem; }
+  .pr-upgrade-table th {
+    background: var(--color-bg); padding: 0.5rem 0.75rem; text-align: left;
+    font-size: 0.75rem; text-transform: uppercase; color: var(--color-muted);
+    letter-spacing: 0.05em; border-bottom: 1px solid var(--color-border);
+  }
+  .pr-upgrade-table td { padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--color-border); }
+  .pr-upgrade-table tr:last-child td { border-bottom: none; }
+
+  /* Review actions */
+  .review-actions { display: flex; gap: 0.75rem; align-items: flex-start; flex-wrap: wrap; margin-top: 1rem; }
+  .review-comment {
+    flex: 1; min-width: 220px; padding: 0.6rem 0.75rem;
+    border: 1px solid var(--color-border); border-radius: var(--radius);
+    font-size: 0.85rem; font-family: inherit; resize: vertical; min-height: 60px;
+    background: var(--color-bg);
+  }
+  .review-comment:focus { outline: 2px solid var(--color-accent); border-color: transparent; }
+  .review-btns { display: flex; gap: 0.6rem; flex-direction: column; }
+  .btn-approve, .btn-reject, .btn-clear {
+    padding: 0.55rem 1.2rem; border-radius: var(--radius); border: none;
+    cursor: pointer; font-size: 0.9rem; font-weight: 700; white-space: nowrap; transition: opacity 0.15s;
+  }
+  .btn-approve { background: var(--color-pass);     color: white; }
+  .btn-reject  { background: var(--color-critical); color: white; }
+  .btn-clear   { background: #e2e8f0; color: var(--color-text); font-weight: 500; font-size: 0.8rem; }
+  .btn-approve:hover, .btn-reject:hover { opacity: 0.85; }
+  .btn-approve:disabled, .btn-reject:disabled { opacity: 0.45; cursor: not-allowed; }
+
+  /* Status message */
+  .review-status {
+    margin-top: 0.75rem; padding: 0.6rem 1rem; border-radius: var(--radius);
+    font-size: 0.88rem; font-weight: 600; display: none;
+  }
+  .review-status.success { background: #dcfce7; color: var(--color-pass);     display: block; }
+  .review-status.warning { background: #fef9c3; color: var(--color-medium);   display: block; }
+  .review-status.error   { background: #fee2e2; color: var(--color-critical); display: block; }
+  .review-status.info    { background: #dbeafe; color: #1d4ed8;               display: block; }
+
+  /* Per-fix decision buttons */
+  .fix-btns { display: flex; gap: 0.35rem; }
+  .fix-btn {
+    padding: 0.22rem 0.6rem; border-radius: 999px; border: 1.5px solid;
+    cursor: pointer; font-size: 0.72rem; font-weight: 700; background: transparent;
+    transition: background 0.15s, color 0.15s;
+  }
+  .fix-btn-accept { border-color: var(--color-pass);     color: var(--color-pass); }
+  .fix-btn-skip   { border-color: #94a3b8;               color: #94a3b8; }
+  .fix-btn-accept.active { background: var(--color-pass);     color: white; }
+  .fix-btn-skip.active   { background: #94a3b8;               color: white; }
+  .fix-btn:hover:not(.active) { opacity: 0.65; }
+  .pr-upgrade-table tr.row-accepted { background: #f0fdf4; }
+  .pr-upgrade-table tr.row-skipped  { background: #f8fafc; }
+  .pr-upgrade-table tr.row-skipped td { text-decoration: line-through; color: #94a3b8; }
+  .fix-decision-summary {
+    font-size: 0.8rem; color: var(--color-muted); margin-bottom: 0.75rem;
+    padding: 0.4rem 0.75rem; background: var(--color-bg);
+    border-radius: var(--radius); display: none;
+  }
+  .fix-decision-summary span { font-weight: 700; }
+  .fix-decision-summary span.acc { color: var(--color-pass); }
+  .fix-decision-summary span.skp { color: #94a3b8; }
+  .fix-decision-summary span.und { color: var(--color-medium); }
+
+  /* Print / PDF */
+  @media print {
+    .tabs, .tab, .pr-review-panel { display: none; }
+    .tab-content { display: block !important; }
+    canvas { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<!-- DATA INJECTION — filled by report generator -->
+<script>
+window.REPORT_DATA = null; /* INJECT_REPORT_DATA_HERE */
+</script>
+
+<div class="report-header">
+  <h1>🔐 Dependency Health Report</h1>
+  <div class="meta" id="meta-line">Loading...</div>
+  <div class="health-score-block">
+    <div class="score-circle" id="score-circle">–</div>
+    <div>
+      <div style="color:white;font-size:1.1rem;font-weight:600" id="score-label">–</div>
+      <div class="score-label" id="score-sublabel">Pipeline Health Score</div>
+    </div>
+  </div>
+</div>
+
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('exec')">📊 Executive Summary</div>
+  <div class="tab" onclick="switchTab('tech')">🔧 Technical Appendix</div>
+</div>
+
+<!-- EXECUTIVE SUMMARY TAB -->
+<div class="tab-content active" id="tab-exec">
+  <div class="kpi-grid" id="kpi-grid"></div>
+
+  <div class="charts-row">
+    <div class="chart-card">
+      <h3>CVE Severity Breakdown</h3>
+      <canvas id="cve-donut"></canvas>
+    </div>
+    <div class="chart-card">
+      <h3>Risk Tier Distribution</h3>
+      <canvas id="risk-bar"></canvas>
+    </div>
+  </div>
+
+  <div class="section-title">🔑 Key Findings</div>
+  <ul class="findings-list" id="findings-list"></ul>
+
+  <div class="section-title">🚦 Pipeline Stages</div>
+  <div class="timeline" id="pipeline-timeline"></div>
+
+  <div class="section-title">🏆 Top 5 Highest-Risk Dependencies</div>
+  <div class="table-card">
+    <table id="top5-table">
+      <thead><tr><th>#</th><th>Artifact</th><th>Risk Score</th><th>Tier</th><th>Top CVE</th></tr></thead>
+      <tbody id="top5-tbody"></tbody>
+    </table>
+  </div>
+
+  <div class="section-title">🔀 Consolidated Security PR — Approve / Reject</div>
+  <div class="pr-review-panel" id="pr-review-panel">
+
+    <!-- PR header row -->
+    <div class="pr-panel-header">
+      <h3 id="pr-panel-title">Loading PR info...</h3>
+      <a id="pr-panel-link" href="#" target="_blank" rel="noopener"></a>
+      <span id="pr-dry-tag" class="pr-dry-tag" style="display:none">DRY-RUN — no real PR yet</span>
+    </div>
+
+    <!-- Upgrade summary table -->
+    <div style="overflow-x:auto;margin-bottom:0.5rem">
+      <table class="pr-upgrade-table" id="pr-upgrade-table">
+        <thead>
+          <tr>
+            <th>Artifact</th><th>Current</th><th>Fixed</th>
+            <th>Bump</th><th>CVEs Fixed</th><th>Decision</th>
+          </tr>
+        </thead>
+        <tbody id="pr-upgrade-tbody"></tbody>
+      </table>
+    </div>
+    <div class="fix-decision-summary" id="fix-decision-summary"></div>
+
+    <!-- GitHub token connect row -->
+    <div id="token-connect-row" class="token-row">
+      <label for="gh-token-input">GitHub Token:</label>
+      <input type="password" id="gh-token-input"
+             placeholder="ghp_… or github_pat_… (stored only in this browser tab)">
+      <button class="btn-connect" onclick="connectToken()">Connect</button>
+    </div>
+    <div id="token-connected-row" style="display:none;margin-bottom:1rem">
+      <span class="connected-badge">&#10003; GitHub connected</span>
+      <button class="btn-clear" style="margin-left:0.75rem" onclick="clearToken()">Disconnect</button>
+    </div>
+
+    <!-- Review actions -->
+    <div class="review-actions" id="review-actions">
+      <textarea class="review-comment" id="review-comment"
+                placeholder="Optional comment for the PR review…"></textarea>
+      <div class="review-btns">
+        <button class="btn-approve" id="btn-approve" onclick="submitReview('APPROVE')">
+          ✓&nbsp;Approve
+        </button>
+        <button class="btn-reject"  id="btn-reject"  onclick="submitReview('REQUEST_CHANGES')">
+          ✗&nbsp;Request Changes
+        </button>
+      </div>
+    </div>
+    <div class="review-status" id="review-status"></div>
+  </div>
+</div>
+
+<!-- TECHNICAL APPENDIX TAB -->
+<div class="tab-content" id="tab-tech">
+  <div class="section-title">📋 All CVEs Detected</div>
+  <div class="table-card">
+    <table id="cve-table">
+      <thead><tr><th>CVE ID</th><th>Artifact</th><th>CVSS</th><th>Severity</th><th>Description</th></tr></thead>
+      <tbody id="cve-tbody"></tbody>
+    </table>
+  </div>
+
+  <div class="section-title">⚖️ Supply-Chain Audit Violations</div>
+  <div class="table-card">
+    <table id="audit-table">
+      <thead><tr><th>Component</th><th>Check</th><th>Severity</th><th>Detail</th></tr></thead>
+      <tbody id="audit-tbody"></tbody>
+    </table>
+  </div>
+
+  <div class="section-title">🔀 Remediation PRs</div>
+  <div class="table-card">
+    <table id="pr-table">
+      <thead><tr><th>Artifact</th><th>Old → New</th><th>Bump</th><th>CVEs Fixed</th><th>Status</th></tr></thead>
+      <tbody id="pr-tbody"></tbody>
+    </table>
+  </div>
+
+  <div class="section-title">🧪 Validation Gate Results</div>
+  <div class="table-card">
+    <table id="gates-table">
+      <thead><tr><th>PR</th><th>mvn test</th><th>OWASP</th><th>Grype</th><th>JaCoCo</th><th>Verdict</th></tr></thead>
+      <tbody id="gates-tbody"></tbody>
+    </table>
+  </div>
+
+  <div class="section-title">✅ Unit Test Results</div>
+  <div class="table-card" id="unit-test-panel">
+    <div id="unit-test-summary" style="padding:10px 4px 6px;font-size:0.9rem;color:#475569"></div>
+    <table id="unit-test-table">
+      <thead><tr><th>Test</th><th>Status</th><th>Detail</th></tr></thead>
+      <tbody id="unit-test-tbody"></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach((t,i) => {
+    t.classList.toggle('active', (i===0&&name==='exec')||(i===1&&name==='tech'));
+  });
+  document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+}
+
+function badge(text, cls) {
+  return `<span class="badge badge-${cls.toLowerCase()}">${text}</span>`;
+}
+
+function render(data) {
+  if (!data) return;
+
+  // Header
+  document.getElementById('meta-line').textContent =
+    `${data.project} | Scan date: ${data.scan_date}`;
+
+  // Health score
+  const sc = document.getElementById('score-circle');
+  sc.textContent = data.pipeline_health.score;
+  sc.className = `score-circle grade-${data.pipeline_health.grade}`;
+  document.getElementById('score-label').textContent =
+    `Grade ${data.pipeline_health.grade} — ${data.pipeline_health.label}`;
+
+  // KPIs
+  const kpis = [
+    { value: data.cve_summary.total_cves,          label: 'Total CVEs Found',    cls: 'critical' },
+    { value: data.remediation_summary.cves_fixed_count || 0, label: 'CVEs Fixed', cls: 'pass' },
+    { value: data.validation_summary.prs_merged || 0, label: 'PRs Auto-Merged', cls: 'pass' },
+    { value: (data.validation_summary.avg_jacoco_coverage || 0) + '%', label: 'Avg Coverage', cls: '' },
+  ];
+  document.getElementById('kpi-grid').innerHTML = kpis.map(k =>
+    `<div class="kpi-card ${k.cls}">
+       <div class="kpi-value">${k.value}</div>
+       <div class="kpi-label">${k.label}</div>
+     </div>`
+  ).join('');
+
+  // CVE donut
+  const c = data.cve_summary;
+  try {
+    new Chart(document.getElementById('cve-donut'), {
+      type: 'doughnut',
+      data: {
+        labels: ['Critical','High','Medium','Low'],
+        datasets: [{ data: [c.critical_count, c.high_count, c.medium_count, c.low_count],
+          backgroundColor: ['#dc2626','#ea580c','#ca8a04','#16a34a'], borderWidth: 0 }]
+      },
+      options: { plugins: { legend: { position: 'right' } }, cutout: '65%' }
+    });
+  } catch(e) {
+    document.getElementById('cve-donut').parentElement.innerHTML =
+      `<h3>CVE Severity Breakdown</h3><p style="color:#64748b;font-size:0.85rem">Chart unavailable (Chart.js not loaded)</p>` +
+      `<p style="font-size:1rem">Critical: <b>${c.critical_count}</b> &nbsp; High: <b>${c.high_count}</b> &nbsp; Medium: <b>${c.medium_count}</b> &nbsp; Low: <b>${c.low_count}</b></p>`;
+  }
+
+  // Risk bar
+  const r = data.risk_summary;
+  try {
+    new Chart(document.getElementById('risk-bar'), {
+      type: 'bar',
+      data: {
+        labels: ['Critical','High','Medium','Low'],
+        datasets: [{ label: 'Dependencies', data: [r.critical_count, r.high_count, r.medium_count, r.low_count],
+          backgroundColor: ['#dc2626','#ea580c','#ca8a04','#16a34a'] }]
+      },
+      options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
+    });
+  } catch(e) {
+    document.getElementById('risk-bar').parentElement.innerHTML =
+      `<h3>Risk Tier Distribution</h3><p style="color:#64748b;font-size:0.85rem">Chart unavailable (Chart.js not loaded)</p>` +
+      `<p style="font-size:1rem">Critical: <b>${r.critical_count}</b> &nbsp; High: <b>${r.high_count}</b> &nbsp; Medium: <b>${r.medium_count}</b> &nbsp; Low: <b>${r.low_count}</b></p>`;
+  }
+
+  // Key findings
+  document.getElementById('findings-list').innerHTML =
+    (data.key_findings || []).map(f => `<li>${f}</li>`).join('');
+
+  // Pipeline timeline
+  const stages = [
+    { icon: '🔍', label: 'Stage 1\nCVE Scan',      status: data.stage1_available ? 'pass' : 'fail' },
+    { icon: '🎯', label: 'Stage 2\nRisk Scoring',  status: data.stage2_available ? 'pass' : 'fail' },
+    { icon: '🔒', label: 'Stage 3\nAudit',         status: data.stage3_available ? 'pass' : 'fail' },
+    { icon: '🔧', label: 'Stage 4\nRemediation',   status: data.stage4_available ? 'pass' : 'fail' },
+    { icon: '✅', label: 'Stage 5\nValidation',     status: data.stage5_available ? 'pass' : 'fail' },
+  ];
+  document.getElementById('pipeline-timeline').innerHTML = stages.map(s =>
+    `<div class="tl-step ${s.status}">
+       <div class="icon">${s.icon}</div>
+       <div class="label">${s.label.replace('\n','<br>')}</div>
+     </div>`
+  ).join('');
+
+  // Top 5 table
+  document.getElementById('top5-tbody').innerHTML =
+    (r.top5_risky_deps || []).map((d,i) =>
+      `<tr><td>${i+1}</td><td><code>${d.artifact}</code></td>
+       <td><strong>${d.score}</strong></td>
+       <td>${badge(d.tier, d.tier.toLowerCase())}</td>
+       <td><code>${d.top_cve}</code></td></tr>`
+    ).join('');
+
+  // CVE table (technical)
+  document.getElementById('cve-tbody').innerHTML =
+    (c.top_cves || []).map(v =>
+      `<tr><td><code>${v.id}</code></td><td>${v.artifact}</td>
+       <td>${v.cvss}</td>
+       <td>${badge(v.severity, v.severity.toLowerCase())}</td>
+       <td style="max-width:300px;font-size:0.8rem">${v.description}</td></tr>`
+    ).join('');
+
+  // Audit violations
+  const audit = data.audit_summary;
+  document.getElementById('audit-tbody').innerHTML =
+    (audit.violations || []).map(v =>
+      `<tr><td><code>${v.component}</code></td>
+       <td>${v.check}</td>
+       <td>${badge(v.severity, v.severity.toLowerCase())}</td>
+       <td style="font-size:0.85rem">${v.detail}</td></tr>`
+    ).join('') || '<tr><td colspan="4" style="text-align:center;color:#64748b">No violations</td></tr>';
+
+  // Remediation PRs
+  const rem = data.remediation_summary;
+  document.getElementById('pr-tbody').innerHTML =
+    (rem.upgrades || []).map(pr =>
+      `<tr><td><code>${pr.artifact}</code></td>
+       <td>${pr.old_version} → ${pr.new_version}</td>
+       <td>${badge(pr.bump_type, pr.bump_type.toLowerCase())}</td>
+       <td>${(pr.cves_fixed||[]).join(', ')||'—'}</td>
+       <td>${pr.pr_url ? `<a href="${pr.pr_url}" target="_blank">#${pr.pr_number}</a>` : '—'}</td></tr>`
+    ).join('') || '<tr><td colspan="5" style="text-align:center;color:#64748b">No upgrades</td></tr>';
+
+  // Validation gates
+  const val = data.validation_summary;
+  document.getElementById('gates-tbody').innerHTML =
+    (val.pull_requests || []).map(pr => {
+      const g = {};
+      (pr.gates||[]).forEach(gate => g[gate.gate] = gate.status);
+      const gs = s => badge(s||'—', (s||'').toLowerCase() === 'pass' ? 'pass' : 'fail');
+      return `<tr>
+        <td>#${pr.pr_number}</td>
+        <td>${gs(g['mvn-test'])}</td>
+        <td>${gs(g['owasp-scan'])}</td>
+        <td>${gs(g['grype-scan'])}</td>
+        <td>${gs(g['jacoco-coverage'])}</td>
+        <td>${badge(pr.verdict||'—', pr.verdict==='AUTO_MERGE'?'pass':pr.verdict==='BLOCKED'?'fail':'medium')}</td>
+      </tr>`;
+    }).join('') || '<tr><td colspan="6" style="text-align:center;color:#64748b">No PRs validated</td></tr>';
+}
+
+function renderTestPanel(data) {
+  const ts    = (data && data.unit_test_summary) || {};
+  const total = ts.total  || 0;
+  const pass  = ts.passed || 0;
+  const fail  = ts.failed || 0;
+  const ok    = ts.success !== false && total > 0;
+
+  const sumEl = document.getElementById('unit-test-summary');
+  if (sumEl) {
+    const color = ok ? '#16a34a' : '#dc2626';
+    sumEl.innerHTML =
+      `<strong style="color:${color}">${ok ? '✅ All tests passed' : '❌ Test failures'}</strong>` +
+      ` &mdash; ${total} tests &nbsp;|&nbsp; ` +
+      `<span style="color:#16a34a">${pass} passed</span>` +
+      (fail ? ` &nbsp;|&nbsp; <span style="color:#dc2626">${fail} failed</span>` : '');
+  }
+
+  const tbody = document.getElementById('unit-test-tbody');
+  if (!tbody) return;
+  const tests = (ts.tests || []);
+  if (!tests.length) {
+    tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:#64748b">No test results available — run test_pipeline.py</td></tr>';
+    return;
+  }
+  // Show failures first, then passed
+  const sorted = [...tests].sort((a,b) =>
+    (a.status === 'PASS' ? 1 : -1) - (b.status === 'PASS' ? 1 : -1));
+  tbody.innerHTML = sorted.map(t => {
+    const cls  = t.status === 'PASS' ? 'pass' : 'fail';
+    const icon = t.status === 'PASS' ? '✅' : '❌';
+    const name = (t.name || '').replace(/\s*\(.*\)/, ''); // strip module path
+    return `<tr>
+      <td style="font-family:monospace;font-size:0.8rem">${name}</td>
+      <td>${badge(t.status, cls)}</td>
+      <td style="font-size:0.78rem;color:#64748b;max-width:400px;word-break:break-word">${(t.detail||'').replace(/\n/g,'<br>')}</td>
+    </tr>`;
+  }).join('');
+}
+
+// Render on load
+document.addEventListener('DOMContentLoaded', () => {
+  render(window.REPORT_DATA);
+  renderPRPanel(window.REPORT_DATA || {});
+  renderTestPanel(window.REPORT_DATA || {});
+});
+
+// ─── PR Review Panel ──────────────────────────────────────────────────────────
+
+function renderPRPanel(data) {
+  const rem   = data.remediation_summary || {};
+  const upgrades = rem.upgrades || [];
+  if (!upgrades.length) return;
+
+  // All upgrades share the same consolidated PR number/URL
+  const prNum  = upgrades[0].pr_number;
+  const prUrl  = upgrades[0].pr_url || '';
+  const isDry  = !prNum || prUrl.includes('DRY-RUN') || prUrl.includes('[FAILED');
+
+  const panel = document.getElementById('pr-review-panel');
+  panel.classList.add(isDry ? 'dry' : 'live');
+
+  // Title & link
+  const repoUrl  = (data.repo_url || '').replace(/\/$/, '');
+  const liveUrl  = isDry ? '#' : prUrl;
+  document.getElementById('pr-panel-title').textContent =
+    isDry ? 'No real PR yet (dry-run mode)' : `PR #${prNum} — ${upgrades.length} dependency upgrades`;
+  const linkEl = document.getElementById('pr-panel-link');
+  linkEl.href        = liveUrl;
+  linkEl.textContent = isDry ? '' : `View on GitHub →`;
+  if (isDry) document.getElementById('pr-dry-tag').style.display = 'inline';
+
+  // Upgrade table with per-row Accept / Skip buttons
+  document.getElementById('pr-upgrade-tbody').innerHTML = upgrades.map((u, i) => {
+    const artKey = encodeURIComponent(u.artifact);
+    const cveStr = (u.cves_fixed||[]).slice(0,3).join(', ') + ((u.cves_fixed||[]).length > 3 ? '…' : '');
+    const disAttr = isDry ? ' disabled title="Create a real PR first (run with --token)"' : '';
+    return `<tr id="fix-row-${i}">
+       <td><code>${u.artifact}</code></td>
+       <td><code>${u.old_version}</code></td>
+       <td><code>${u.new_version}</code></td>
+       <td>${badge(u.bump_type, u.bump_type.toLowerCase())}</td>
+       <td style="font-size:0.78rem">${cveStr}</td>
+       <td><div class="fix-btns">
+         <button class="fix-btn fix-btn-accept" id="fix-acc-${i}"
+                 onclick="setFixDecision(${i},'accepted')"${disAttr}>✓ Accept</button>
+         <button class="fix-btn fix-btn-skip"   id="fix-skp-${i}"
+                 onclick="setFixDecision(${i},'skipped')"${disAttr}>✗ Skip</button>
+       </div></td>
+     </tr>`;
+  }).join('');
+
+  // Store upgrade count for decision tracking
+  window._fixCount = upgrades.length;
+
+  // Disable approve/reject in dry-run
+  if (isDry) {
+    document.getElementById('btn-approve').disabled = true;
+    document.getElementById('btn-reject').disabled  = true;
+    setStatus('info', 'Run the pipeline with --token to create a real PR, then approve/reject here.');
+  }
+
+  // Token state
+  restoreTokenState();
+}
+
+function restoreTokenState() {
+  const tok = sessionStorage.getItem('uc1_gh_token');
+  document.getElementById('token-connect-row').style.display    = tok ? 'none'  : 'flex';
+  document.getElementById('token-connected-row').style.display  = tok ? 'block' : 'none';
+}
+
+function connectToken() {
+  const tok = document.getElementById('gh-token-input').value.trim();
+  if (!tok) { alert('Please paste your GitHub token first.'); return; }
+  sessionStorage.setItem('uc1_gh_token', tok);
+  document.getElementById('gh-token-input').value = '';
+  restoreTokenState();
+  setStatus('success', 'GitHub token saved for this session. You can now approve or reject the PR.');
+}
+
+function clearToken() {
+  sessionStorage.removeItem('uc1_gh_token');
+  restoreTokenState();
+  setStatus('info', 'Token disconnected.');
+}
+
+// ── Per-fix decision tracking ─────────────────────────────────────────────────
+const fixDecisions = {};   // index -> 'accepted' | 'skipped'
+
+function setFixDecision(idx, decision) {
+  const prev = fixDecisions[idx];
+  const row  = document.getElementById(`fix-row-${idx}`);
+  const accBtn = document.getElementById(`fix-acc-${idx}`);
+  const skpBtn = document.getElementById(`fix-skp-${idx}`);
+  if (!row) return;
+
+  if (prev === decision) {
+    // toggle off
+    delete fixDecisions[idx];
+    row.className = '';
+    accBtn.classList.remove('active');
+    skpBtn.classList.remove('active');
+  } else {
+    fixDecisions[idx] = decision;
+    row.className = decision === 'accepted' ? 'row-accepted' : 'row-skipped';
+    accBtn.classList.toggle('active', decision === 'accepted');
+    skpBtn.classList.toggle('active', decision === 'skipped');
+  }
+  _updateDecisionSummary();
+}
+
+function _updateDecisionSummary() {
+  const total    = window._fixCount || 0;
+  const accepted = Object.values(fixDecisions).filter(v => v === 'accepted').length;
+  const skipped  = Object.values(fixDecisions).filter(v => v === 'skipped').length;
+  const undecided = total - accepted - skipped;
+  const el = document.getElementById('fix-decision-summary');
+  if (!el || !total) return;
+  el.style.display = (accepted + skipped > 0) ? 'block' : 'none';
+  el.innerHTML =
+    `Decisions: <span class="acc">${accepted} accepted</span> · ` +
+    `<span class="skp">${skipped} skipped</span>` +
+    (undecided > 0 ? ` · <span class="und">${undecided} undecided</span>` : '');
+
+  // Update approve button label
+  const approveBtn = document.getElementById('btn-approve');
+  if (approveBtn && !approveBtn.disabled) {
+    approveBtn.textContent = accepted > 0
+      ? `✓ Approve (${accepted} fix${accepted !== 1 ? 'es' : ''})`
+      : '✓ Approve';
+  }
+}
+
+function setStatus(type, msg) {
+  const el = document.getElementById('review-status');
+  el.className     = `review-status ${type}`;
+  el.textContent   = msg;
+}
+
+async function submitReview(event) {
+  const data = window.REPORT_DATA;
+  if (!data) return;
+
+  const token = sessionStorage.getItem('uc1_gh_token');
+  if (!token) {
+    setStatus('warning', 'Paste your GitHub token above and click Connect first.');
+    return;
+  }
+
+  const upgrades = (data.remediation_summary || {}).upgrades || [];
+  if (!upgrades.length) return;
+
+  const prNum  = upgrades[0].pr_number;
+  const prUrl  = upgrades[0].pr_url || '';
+  if (!prNum || prUrl.includes('DRY-RUN')) {
+    setStatus('warning', 'No real GitHub PR exists yet — run the pipeline with --token to create one.');
+    return;
+  }
+
+  // Parse owner/repo from repo_url
+  const repoPath = (data.repo_url || '').replace('https://github.com/', '').replace(/\/$/, '');
+  const [owner, repo] = repoPath.split('/');
+  if (!owner || !repo) { setStatus('error', 'Could not determine repo from report data.'); return; }
+
+  // Build comment — include per-fix decisions when any are set
+  const accepted = upgrades.filter((_, i) => fixDecisions[i] === 'accepted');
+  const skipped  = upgrades.filter((_, i) => fixDecisions[i] === 'skipped');
+  let autoComment = '';
+  if (event === 'APPROVE') {
+    autoComment = 'Approved via UC1 Supply Chain Security Pipeline report.';
+    if (accepted.length) autoComment += '\n\n**Accepted fixes:**\n' +
+      accepted.map(u => `- \`${u.artifact}\` ${u.old_version} → ${u.new_version} (fixes: ${(u.cves_fixed||[]).join(', ')||'—'})`).join('\n');
+    if (skipped.length)  autoComment += '\n\n**Skipped (manual review needed):**\n' +
+      skipped.map(u => `- \`${u.artifact}\` — ${u.old_version} → ${u.new_version}`).join('\n');
+  } else {
+    autoComment = 'Changes requested via UC1 Supply Chain Security Pipeline report.';
+    if (skipped.length) autoComment += '\n\nThe following upgrades need further review before merging:\n' +
+      skipped.map(u => `- \`${u.artifact}\` ${u.old_version} → ${u.new_version}`).join('\n');
+  }
+  const comment = document.getElementById('review-comment').value.trim() || autoComment;
+
+  document.getElementById('btn-approve').disabled = true;
+  document.getElementById('btn-reject').disabled  = true;
+  setStatus('info', 'Submitting review to GitHub…');
+
+  try {
+    const resp = await fetch(
+      `https://api.github.com/repos/${owner}/${repo}/pulls/${prNum}/reviews`,
+      {
+        method:  'POST',
+        headers: {
+          'Authorization':        `Bearer ${token}`,
+          'Accept':               'application/vnd.github+json',
+          'X-GitHub-Api-Version': '2022-11-28',
+          'Content-Type':         'application/json',
+        },
+        body: JSON.stringify({ event, body: comment }),
+      }
+    );
+
+    if (resp.ok) {
+      const label = event === 'APPROVE' ? '✓ PR Approved!' : '✗ Changes Requested';
+      setStatus(event === 'APPROVE' ? 'success' : 'warning', `${label} — GitHub has been updated.`);
+      // Dim the panel to signal action is done
+      document.getElementById('pr-review-panel').style.opacity = '0.7';
+    } else {
+      const err = await resp.json().catch(() => ({}));
+      const msg = err.message || `HTTP ${resp.status}`;
+      setStatus('error', `GitHub API error: ${msg}`);
+      document.getElementById('btn-approve').disabled = false;
+      document.getElementById('btn-reject').disabled  = false;
+    }
+  } catch (e) {
+    setStatus('error', `Network error: ${e.message}`);
+    document.getElementById('btn-approve').disabled = false;
+    document.getElementById('btn-reject').disabled  = false;
+  }
+}
+</script>
+</body>
+</html>

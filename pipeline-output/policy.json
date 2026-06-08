@@ -1,0 +1,65 @@
+{
+  "_comment": "UC1 Supply Chain Security Pipeline — Policy Configuration",
+  "_doc": "Place this file in the pipeline output directory. The pipeline loads it automatically if present.",
+
+  "max_critical_cves": 0,
+  "max_high_cves": 5,
+
+  "blocked_licenses": [
+    "GPL-2.0",
+    "GPL-3.0",
+    "AGPL-3.0",
+    "AGPL-3.0-only",
+    "AGPL-3.0-or-later",
+    "SSPL-1.0"
+  ],
+
+  "allow_untrusted_sources": false,
+
+  "fail_on_secrets": true,
+
+  "allow_snapshot_versions": false,
+
+  "trusted_group_prefixes": [
+    "org.springframework",
+    "com.fasterxml.jackson",
+    "org.apache",
+    "com.google",
+    "io.netty",
+    "org.hibernate",
+    "org.slf4j",
+    "ch.qos.logback",
+    "org.junit",
+    "com.h2database",
+    "mysql",
+    "org.postgresql",
+    "com.zaxxer",
+    "io.micrometer",
+    "org.bouncycastle"
+  ],
+
+  "max_composite_risk_score": 90,
+
+  "require_jacoco_coverage_pct": 80,
+
+  "auto_merge_bump_types": ["PATCH", "MINOR"],
+
+  "block_major_auto_merge": true,
+
+  "secret_severity_threshold": "HIGH",
+
+  "_fields": {
+    "max_critical_cves":           "Block pipeline if this many Critical CVEs found (0 = any Critical blocks)",
+    "max_high_cves":               "Block pipeline if more than this many High CVEs found",
+    "blocked_licenses":            "SPDX license identifiers — any match blocks the pipeline",
+    "allow_untrusted_sources":     "If false, deps from non-standard Maven repos trigger a violation",
+    "fail_on_secrets":             "If true, any detected secret at or above secret_severity_threshold blocks the pipeline",
+    "allow_snapshot_versions":     "If false, -SNAPSHOT versions in production scope trigger a violation",
+    "trusted_group_prefixes":      "Group ID prefixes considered trusted sources (overrides untrusted_source check)",
+    "max_composite_risk_score":    "Block any dep with a composite risk score above this threshold",
+    "require_jacoco_coverage_pct": "JaCoCo gate threshold (%) — gate fails if coverage is below this",
+    "auto_merge_bump_types":       "Bump types eligible for auto-merge after all gates pass",
+    "block_major_auto_merge":      "If true, MAJOR bumps always require human approval regardless of gate results",
+    "secret_severity_threshold":   "Minimum secret severity to trigger fail_on_secrets (CRITICAL / HIGH / MEDIUM / LOW)"
+  }
+}

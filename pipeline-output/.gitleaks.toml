@@ -1,0 +1,85 @@
+# UC1 Supply Chain Security Pipeline — Secret Detection Configuration
+# Compatible with gitleaks v8+ TOML format.
+# The UC1 pipeline uses its own built-in regex scanner; this file is provided
+# as a reference for teams integrating with the official gitleaks tool.
+
+title = "UC1 Secret Detection Rules"
+
+[extend]
+# Extend the default gitleaks ruleset (uses upstream defaults as base)
+useDefault = true
+
+# ─── Custom Rules ────────────────────────────────────────────────────────────
+
+[[rules]]
+id          = "generic-api-key"
+description = "Generic API key pattern"
+regex       = '''(?i)(api[_-]?key|apikey|api[_-]?secret)\s*[=:]\s*["']?([A-Za-z0-9_\-]{20,})["']?'''
+tags        = ["key", "api"]
+severity    = "HIGH"
+
+[[rules]]
+id          = "db-password-in-properties"
+description = "Database password in properties or YAML file"
+regex       = '''(?i)(db[_.]?password|database[_.]?password|datasource[_.]?password)\s*[=:]\s*["']?([^"'\s]{6,})["']?'''
+tags        = ["password", "database"]
+severity    = "CRITICAL"
+[rules.allowlist]
+  regexes   = [
+    '''^\$\{''',             # ${property} references — not real secrets
+    '''^changeit$''',        # common Java keystore placeholder
+    '''^yourpassword$''',    # common placeholder
+    '''^<password>$''',      # XML placeholder
+  ]
+
+[[rules]]
+id          = "jwt-secret"
+description = "JWT signing secret"
+regex       = '''(?i)(jwt[_.]?secret|jwt[_.]?key|signing[_.]?secret)\s*[=:]\s*["']?([A-Za-z0-9+/=_\-]{16,})["']?'''
+tags        = ["jwt", "secret"]
+severity    = "HIGH"
+
+[[rules]]
+id          = "private-key-pem"
+description = "PEM private key header"
+regex       = '''-----BEGIN (RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----'''
+tags        = ["key", "pem"]
+severity    = "CRITICAL"
+
+# ─── Allow-list (false positive suppression) ─────────────────────────────────
+
+[allowlist]
+description = "Global allow-list — suppress known false positives"
+
+# Files to exclude entirely
+paths = [
+  '''(^|/)\.git/''',
+  '''(^|/)node_modules/''',
+  '''(^|/)target/''',
+  '''(^|/)\.m2/''',
+  '''\.min\.js$''',
+  '''(^|/)test[s]?/''',            # test directories often contain fake credentials
+  '''(^|/)src/test/''',
+  '''(^|/)src/it/''',
+  '''pipeline-output/dependency-health-report\.html$''',
+  '''pipeline-output/.*\.json$''', # pipeline output files — not source code
+]
+
+# Regexes matching values to suppress globally
+regexes = [
+  '''^\$\{[^}]+\}$''',     # ${property} variable references
+  '''^changeit$''',
+  '''^password$''',
+  '''^secret$''',
+  '''^test$''',
+  '''^example$''',
+  '''^placeholder$''',
+  '''^<[^>]+>$''',          # XML placeholder tags
+  '''^todo''',
+  '''^REPLACE_ME''',
+  '''^YOUR_''',
+  '''^INSERT_''',
+]
+
+# Commits to skip (e.g. known test fixture commits)
+# commits = ["abc123def456"]

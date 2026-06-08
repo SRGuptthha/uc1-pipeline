@@ -1,0 +1,54 @@
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.env
+.venv/
+venv/
+
+# ── Pipeline generated outputs (recreated on every run) ───────────────────────
+pipeline-output/dependency-check-report.json
+pipeline-output/sbom-cyclonedx.json
+pipeline-output/risk-scores.json
+pipeline-output/audit-report.json
+pipeline-output/secret-scan-report.json
+pipeline-output/policy-report.json
+pipeline-output/drift-report.json
+pipeline-output/remediation-manifest.json
+pipeline-output/validation-report.json
+pipeline-output/e2e-report.json
+pipeline-output/audit-trail.json
+pipeline-output/test-results.json
+pipeline-output/security-scan.yml
+pipeline-output/dependency-health-report.html
+
+# Keep baseline for drift detection across runs (intentional)
+# pipeline-output/dependency-baseline.json  ← tracked on purpose
+
+# Downloaded manifest files (fetched fresh from GitHub each run)
+pipeline-output/pom.xml
+pipeline-output/requirements.txt
+pipeline-output/pyproject.toml
+pipeline-output/package.json
+pipeline-output/*.csproj
+pipeline-output/Gemfile
+pipeline-output/go.mod
+
+# ── Office lock files ─────────────────────────────────────────────────────────
+~$*
+
+# ── IDE / Editor ──────────────────────────────────────────────────────────────
+.vscode/settings.local.json
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# ── Claude Code internal ──────────────────────────────────────────────────────
+.claude/settings.local.json

@@ -1,0 +1,42 @@
+{
+  "snapshot_date": "2026-06-08T14:13:11Z",
+  "project": "scrapy",
+  "dependencies": [
+    {
+      "key": "org.springframework:spring-core",
+      "version": "5.3.20",
+      "scope": "compile",
+      "purl": "pkg:maven/org.springframework/spring-core@5.3.20"
+    },
+    {
+      "key": "org.apache.logging.log4j:log4j-core",
+      "version": "2.14.1",
+      "scope": "compile",
+      "purl": "pkg:maven/org.apache.logging.log4j/log4j-core@2.14.1"
+    },
+    {
+      "key": "com.fasterxml.jackson.core:jackson-databind",
+      "version": "2.13.0",
+      "scope": "compile",
+      "purl": "pkg:maven/com.fasterxml.jackson.core/jackson-databind@2.13.0"
+    },
+    {
+      "key": "org.apache.commons:commons-text",
+      "version": "1.9",
+      "scope": "compile",
+      "purl": "pkg:maven/org.apache.commons/commons-text@1.9"
+    },
+    {
+      "key": "org.yaml:snakeyaml",
+      "version": "1.30",
+      "scope": "compile",
+      "purl": "pkg:maven/org.yaml/snakeyaml@1.30"
+    },
+    {
+      "key": "com.h2database:h2",
+      "version": "2.1.210",
+      "scope": "compile",
+      "purl": "pkg:maven/com.h2database/h2@2.1.210"
+    }
+  ]
+}

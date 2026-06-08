@@ -1,0 +1,12 @@
+# Source Allowlist — Trusted Non-Maven-Central Artifacts
+# One groupId:artifactId per line. Version is ignored — all versions of the artifact are trusted.
+# Add internal/private artifacts here to prevent false positives in the untrusted source check.
+
+# Format:
+# com.mycompany:internal-utils
+# com.mycompany:shared-models
+
+# Examples (uncomment and edit as needed):
+# com.myorg:core-platform
+# com.myorg:auth-client
+# com.myorg:data-commons
