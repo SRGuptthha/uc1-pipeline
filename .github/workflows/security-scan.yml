@@ -44,14 +44,14 @@ jobs:
           echo "repo=$REPO" >> $GITHUB_OUTPUT
 
       - name: Run pipeline (dry-run)
-        if: ${{ github.event.inputs.create_prs != 'true' }}
+        if: github.event.inputs.create_prs != 'true'
         run: |
           python pipeline-output/run_pipeline.py \
             "${{ steps.target.outputs.repo }}" \
             --out-dir pipeline-output
 
       - name: Run pipeline (live — creates PRs)
-        if: ${{ github.event.inputs.create_prs == 'true' && secrets.DEMO_REPO_PAT != '' }}
+        if: github.event.inputs.create_prs == 'true'
         env:
           DEMO_REPO_PAT: ${{ secrets.DEMO_REPO_PAT }}
         run: |
@@ -60,21 +60,29 @@ jobs:
             --out-dir pipeline-output \
             --token "$DEMO_REPO_PAT"
 
-      - name: Policy gate — fail build on critical violations
+      - name: Print report summary
+        if: always()
         run: |
           python3 << 'PYEOF'
-          import json, sys
+          import json
           try:
-              r = json.load(open('pipeline-output/policy-report.json'))
-              fails = [v for v in r.get('violations', []) if v.get('action') == 'FAIL']
-              if fails:
-                  print(f'POLICY FAILED: {len(fails)} violation(s)')
-                  for v in fails:
-                      print(f"  [{v['policy_id']}] {v['detail']}")
-                  sys.exit(1)
-              print('POLICY PASSED')
-          except FileNotFoundError:
-              print('policy-report.json not found — skipping gate')
+              t = json.load(open('pipeline-output/audit-trail.json'))
+              h = t.get('pipeline_health', {})
+              c = t.get('cve_summary',     {})
+              print("")
+              print("  ══════════════════════════════════════════")
+              print("   SECURITY SCAN SUMMARY")
+              print("  ══════════════════════════════════════════")
+              print(f"   Repo    : {t.get('repo_url','—')}")
+              print(f"   Language: {t.get('language','—')} / {t.get('ecosystem','—')}")
+              print(f"   Grade   : {h.get('grade','—')}  ({h.get('score','—')}/100)  {h.get('label','')}")
+              print(f"   CVEs    : {c.get('total_cves',0)}  "
+                    f"(Critical: {c.get('critical_count',0)}, High: {c.get('high_count',0)})")
+              print("  ══════════════════════════════════════════")
+              for f in t.get('key_findings', []):
+                  print(f"   • {f}")
+          except Exception as e:
+              print(f'Could not read audit-trail.json: {e}')
           PYEOF
 
       - name: Upload security artifacts
@@ -92,27 +100,19 @@ jobs:
             pipeline-output/drift-report.json
           retention-days: 90
 
-      - name: Print report summary
-        if: always()
+      - name: Policy gate — fail build on critical violations
         run: |
           python3 << 'PYEOF'
-          import json
+          import json, sys
           try:
-              t = json.load(open('pipeline-output/audit-trail.json'))
-              h = t.get('pipeline_health', {})
-              c = t.get('cve_summary',     {})
-              print(f"")
-              print(f"  ══════════════════════════════════════════")
-              print(f"   SECURITY SCAN SUMMARY")
-              print(f"  ══════════════════════════════════════════")
-              print(f"   Repo    : {t.get('repo_url','—')}")
-              print(f"   Language: {t.get('language','—')} / {t.get('ecosystem','—')}")
-              print(f"   Grade   : {h.get('grade','—')}  ({h.get('score','—')}/100)  {h.get('label','')}")
-              print(f"   CVEs    : {c.get('total_cves',0)}  "
-                    f"(Critical: {c.get('critical_count',0)}, High: {c.get('high_count',0)})")
-              print(f"  ══════════════════════════════════════════")
-              for f in t.get('key_findings', []):
-                  print(f"   • {f}")
-          except Exception as e:
-              print(f'Could not read audit-trail.json: {e}')
+              r = json.load(open('pipeline-output/policy-report.json'))
+              fails = [v for v in r.get('violations', []) if v.get('action') == 'FAIL']
+              if fails:
+                  print(f'POLICY FAILED: {len(fails)} violation(s)')
+                  for v in fails:
+                      print(f"  [{v['policy_id']}] {v['detail']}")
+                  sys.exit(1)
+              print('POLICY PASSED')
+          except FileNotFoundError:
+              print('policy-report.json not found — skipping gate')
           PYEOF
