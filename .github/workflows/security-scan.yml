@@ -43,6 +43,24 @@ jobs:
           REPO="${{ github.event.inputs.target_repo || 'https://github.com/SRGuptha/uc1-security-demo' }}"
           echo "repo=$REPO" >> $GITHUB_OUTPUT
 
+      - name: Debug — verify GitHub API access
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "=== Contents API ==="
+          curl -s -o /dev/null -w "HTTP %{http_code}\n" \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github.raw+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/SRGuptha/uc1-security-demo/contents/pom.xml"
+          echo "=== raw.githubusercontent.com ==="
+          curl -s -o /dev/null -w "HTTP %{http_code}\n" \
+            "https://raw.githubusercontent.com/SRGuptha/uc1-security-demo/main/pom.xml"
+          echo "=== Rate limit remaining ==="
+          curl -s -H "Authorization: Bearer $GH_TOKEN" \
+            "https://api.github.com/rate_limit" \
+            | python3 -c "import json,sys; r=json.load(sys.stdin)['resources']['core']; print(f'{r[\"remaining\"]}/{r[\"limit\"]} requests remaining')"
+
       - name: Run pipeline (dry-run)
         if: github.event.inputs.create_prs != 'true'
         env:

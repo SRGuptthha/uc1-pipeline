@@ -524,10 +524,11 @@ def _fetch_raw_github(owner, repo, filename, token=None):
                 timeout=15)
             return content, "main"
         except urllib.error.HTTPError as e:
+            print(f"  [fetch] Contents API HTTP {e.code} for {filename}")
             if e.code == 404:
-                return None, None   # file genuinely absent — stop here
-        except Exception:
-            pass  # API unreachable — fall through to raw CDN
+                return None, None   # file genuinely absent
+        except Exception as e:
+            print(f"  [fetch] Contents API error for {filename}: {type(e).__name__}: {e}")
 
     # Fallback: raw.githubusercontent.com (unauthenticated / no token)
     for branch in ["main", "master", "HEAD", "develop"]:
@@ -537,10 +538,11 @@ def _fetch_raw_github(owner, repo, filename, token=None):
                 headers=hdrs, timeout=10)
             return content, branch
         except urllib.error.HTTPError as e:
+            print(f"  [fetch] raw HTTP {e.code} for {filename} ({branch})")
             if e.code == 404:
                 continue
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"  [fetch] raw error for {filename} ({branch}): {type(e).__name__}: {e}")
     return None, None
 
 
