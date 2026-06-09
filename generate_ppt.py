@@ -430,7 +430,7 @@ for cond, verdict, col in boxes:
 # ─────────────────────────────────────────────────────────────────────────────
 s = prs.slides.add_slide(BLANK)
 HDR(s, "Live Demo — Real Results",
-    "Scanned: github.com/SRGuptha/uc1-security-demo  |  Language: Java / Maven  |  Duration: < 90 seconds")
+    "Scanned: github.com/SRGuptthha/uc1-security-demo  |  Language: Java / Maven  |  Duration: < 90 seconds")
 FOOTER(s)
 
 R(s, 0.3, 1.55, 8.5, 1.4, fill=RED)
@@ -555,29 +555,29 @@ BL(s, [
 ], 6.5, 6.3, 6.4, 1.0, size=13, gap=2)
 
 # ─────────────────────────────────────────────────────────────────────────────
-# SLIDE 12 — CI/CD INTEGRATION
+# SLIDE 12 — CI/CD INTEGRATION + MCP
 # ─────────────────────────────────────────────────────────────────────────────
 s = prs.slides.add_slide(BLANK)
 HDR(s, "Fits Into Your Existing Workflow",
-    "The pipeline generates a ready-to-use GitHub Actions workflow — one copy, and it runs forever")
+    "GitHub Actions is live in this repo — and Claude Code can drive the pipeline via MCP")
 FOOTER(s)
 
-T(s, "How teams use it:", 0.4, 1.55, 5.5, 0.4, size=16, bold=True, color=NAVY)
+T(s, "GitHub Actions (already live):", 0.4, 1.55, 5.5, 0.4, size=16, bold=True, color=NAVY)
 BL(s, [
-    "!Run manually for a one-off security check on any repo",
-    "!Set up on GitHub Actions to run on every code push",
-    "!Schedule weekly scans to catch newly published CVEs",
-    "!Enforce as a merge gate — block PRs if policy fails",
-    "!Use in Jenkins, GitLab CI, or Azure DevOps equally",
-], 0.4, 2.05, 5.5, 3.3, size=15, gap=9)
+    "!Workflow at .github/workflows/security-scan.yml — active now",
+    "!Triggers on push to main, manual run, and weekly Monday scan",
+    "!Add DEMO_REPO_PAT secret to enable live PR creation",
+    "!Also generates security-scan.yml for any other target repo",
+    "!Works in Jenkins, GitLab CI, and Azure DevOps too",
+], 0.4, 2.05, 5.5, 3.0, size=15, gap=8)
 
-T(s, "What is auto-generated:", 0.4, 5.5, 5.5, 0.4, size=16, bold=True, color=NAVY)
+T(s, "MCP Server (Claude Code):", 0.4, 5.2, 5.5, 0.4, size=16, bold=True, color=TEAL)
 BL(s, [
-    "security-scan.yml  →  copy to .github/workflows/ in your repo",
-    "Runs full pipeline on push, PR, and weekly schedule",
-    "Posts policy gate check on pull requests",
-    "Uploads HTML report as a build artifact",
-], 0.4, 5.95, 5.5, 1.35, size=14, gap=5)
+    "scan_repo  —  run full pipeline from a conversation",
+    "get_health_report  /  get_cve_summary  /  get_policy_status",
+    "create_remediation_prs  —  create GitHub PRs via Claude",
+    "~Pre-configured in .mcp.json — no setup needed",
+], 0.4, 5.65, 5.5, 1.6, size=13, gap=4)
 
 R(s, 6.3, 1.55, 6.7, 5.7, fill=LGRAY, line_rgb=MGRAY)
 T(s, "Trigger → Action → Result",
@@ -585,10 +585,10 @@ T(s, "Trigger → Action → Result",
 R(s, 6.3, 2.1, 6.7, 0.04, fill=TEAL)
 
 triggers = [
-    ("Developer pushes code",     "→", "Full scan runs automatically",    "HTML report available as download"),
-    ("Pull Request opened",       "→", "Policy gate check runs",          "PR blocked if policy FAIL"),
-    ("Every Sunday 2 AM",         "→", "Scheduled scan for new CVEs",     "Team notified of new findings"),
-    ("Manual: run_pipeline.py",   "→", "Instant scan of any GitHub repo", "Report in < 90 seconds"),
+    ("Push to main branch",       "→", "Full scan runs automatically",    "HTML report artifact uploaded"),
+    ("Manual workflow dispatch",  "→", "Scan + optional PR creation",     "PR merged or flagged for review"),
+    ("Every Monday 02:00 UTC",    "→", "Scheduled scan for new CVEs",     "Findings caught before exploitation"),
+    ("Claude: scan_repo (MCP)",   "→", "Full pipeline via conversation",  "Health report returned instantly"),
 ]
 ry = 2.2
 for trigger, arrow, action, result in triggers:
@@ -664,7 +664,7 @@ for t in takeaways:
     T(s, "✔  " + t, 1.5, ty, 10.3, 0.42, size=16, color=WHITE)
     ty += 0.5
 
-T(s, "Demo repo: github.com/SRGuptha/uc1-security-demo  ·  Docs: SETUP.md  ·  Guide: PIPELINE_GUIDE.md",
+T(s, "Demo repo: github.com/SRGuptthha/uc1-security-demo  ·  Docs: SETUP.md  ·  Guide: PIPELINE_GUIDE.md",
   0.5, 6.95, 12.0, 0.35, size=11, color=MGRAY, align=PP_ALIGN.CENTER)
 
 # ─────────────────────────────────────────────────────────────────────────────

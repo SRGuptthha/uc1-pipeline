@@ -905,6 +905,92 @@ def _osv_package_spec(dep):
     return {"name": dep["artifact"], "ecosystem": eco}
 
 
+def _levenshtein(a, b):
+    """Compute Levenshtein edit distance between two strings (stdlib only)."""
+    if a == b:
+        return 0
+    if not a:
+        return len(b)
+    if not b:
+        return len(a)
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a):
+        curr = [i + 1]
+        for j, cb in enumerate(b):
+            curr.append(min(prev[j + 1] + 1, curr[j] + 1,
+                            prev[j] + (0 if ca == cb else 1)))
+        prev = curr
+    return prev[len(b)]
+
+
+_POPULAR_PACKAGES = {
+    "PyPI": [
+        "requests", "flask", "django", "numpy", "pandas", "scipy", "boto3",
+        "sqlalchemy", "fastapi", "pydantic", "celery", "pillow", "pytest",
+        "setuptools", "cryptography", "urllib3", "certifi", "charset-normalizer",
+        "aiohttp", "httpx", "click", "rich", "typer", "uvicorn", "gunicorn",
+        "paramiko", "fabric", "ansible", "jinja2", "werkzeug", "itsdangerous",
+    ],
+    "npm": [
+        "react", "react-dom", "express", "lodash", "axios", "moment", "webpack",
+        "babel-core", "typescript", "eslint", "prettier", "jest", "mocha",
+        "chalk", "commander", "yargs", "dotenv", "cors", "body-parser",
+        "jsonwebtoken", "bcrypt", "mongoose", "sequelize", "socket.io",
+        "next", "vue", "angular", "jquery", "bootstrap",
+    ],
+    "Maven": [
+        "log4j-core", "spring-core", "spring-boot", "guava", "jackson-databind",
+        "commons-lang3", "slf4j-api", "logback-classic", "junit", "mockito-core",
+        "hibernate-core", "netty-all", "tomcat-embed-core", "httpclient",
+        "commons-io", "commons-collections4", "snakeyaml", "h2", "postgresql",
+        "bouncy-castle",
+    ],
+    "NuGet": [
+        "Newtonsoft.Json", "Microsoft.AspNetCore", "Microsoft.EntityFrameworkCore",
+        "AutoMapper", "Serilog", "NUnit", "xunit", "Moq", "FluentValidation",
+        "Dapper", "Polly", "MediatR", "StackExchange.Redis", "log4net",
+    ],
+    "RubyGems": [
+        "rails", "rake", "activerecord", "activesupport", "devise", "rspec",
+        "minitest", "bundler", "sinatra", "puma", "unicorn", "sidekiq",
+        "nokogiri", "httparty", "faraday", "aws-sdk", "carrierwave",
+    ],
+    "Go": [
+        "github.com/gin-gonic/gin", "github.com/gorilla/mux",
+        "github.com/sirupsen/logrus", "go.uber.org/zap",
+        "github.com/stretchr/testify", "github.com/spf13/cobra",
+        "github.com/spf13/viper", "google.golang.org/grpc",
+        "github.com/go-sql-driver/mysql", "github.com/lib/pq",
+    ],
+}
+
+
+def _check_typosquatting(dep_name, ecosystem):
+    """
+    Return a violation dict if dep_name looks like a typosquat of a popular package.
+    Uses Levenshtein distance <= 2 and must differ by at least 1 char.
+    Returns None if no suspicious match.
+    """
+    candidates = _POPULAR_PACKAGES.get(ecosystem, [])
+    name_lower = dep_name.lower().replace("_", "-")
+    for popular in candidates:
+        pop_lower = popular.lower().replace("_", "-")
+        if name_lower == pop_lower:
+            break  # exact match — not a typosquat
+        dist = _levenshtein(name_lower, pop_lower)
+        if 1 <= dist <= 2:
+            return {
+                "check": "typosquatting",
+                "dep": dep_name,
+                "ecosystem": ecosystem,
+                "similar_to": popular,
+                "edit_distance": dist,
+                "detail": (f"'{dep_name}' is {dist} edit(s) away from popular package "
+                           f"'{popular}' — possible typosquat"),
+            }
+    return None
+
+
 # ── Import-only guard — lets test_pipeline.py import helpers without running the pipeline ──
 if os.environ.get("_UC1_IMPORT_ONLY"):
     sys.exit(0)
@@ -1242,11 +1328,22 @@ _stage_times["day2"] = round(_time.time() - _t0_day2, 1)
 print(f"\n[Stage 3] Running Supply-Chain Audit Plugin...")
 _t0_day3 = _time.time()
 
-KNOWN_TRUSTED = {"org.springframework", "com.fasterxml", "org.apache", "com.google",
-                 "io.netty", "org.yaml", "org.hibernate", "com.h2database",
-                 "org.postgresql", "io.micrometer", "org.bouncycastle", "junit",
-                 "org.junit", "org.mockito", "ch.qos.logback", "org.slf4j",
-                 "com.sun", "javax", "jakarta", "io.github"}
+# Load policy.json early so Stage 3 and later stages can all read it
+_pol_cfg = {}
+_pol_cfg_path = os.path.join(OUT, "policy.json")
+if os.path.exists(_pol_cfg_path):
+    try:
+        with open(_pol_cfg_path, encoding="utf-8") as _f:
+            _pol_cfg = json.load(_f)
+    except Exception:
+        pass
+
+_DEFAULT_TRUSTED = {"org.springframework", "com.fasterxml", "org.apache", "com.google",
+                    "io.netty", "org.yaml", "org.hibernate", "com.h2database",
+                    "org.postgresql", "io.micrometer", "org.bouncycastle", "junit",
+                    "org.junit", "org.mockito", "ch.qos.logback", "org.slf4j",
+                    "com.sun", "javax", "jakarta", "io.github"}
+KNOWN_TRUSTED = set(_pol_cfg.get("trusted_group_prefixes", list(_DEFAULT_TRUSTED)))
 
 violations = []
 warnings   = []
@@ -1292,6 +1389,22 @@ for dep in compile_deps[:30]:
             })
 print(f"  License check: {_lic_checked} resolved, "
       f"{sum(1 for v in violations if v['check']=='license_violation')} blocked")
+
+# ── 3d: Typosquatting detection ───────────────────────────────
+_typo_found = 0
+for dep in compile_deps:
+    hit = _check_typosquatting(dep["artifact"], dep.get("ecosystem", ECOSYSTEM))
+    if hit:
+        violations.append({
+            "component": f"{dep.get('group','')}:{dep['artifact']}:{dep['version']}",
+            "check":     "typosquatting",
+            "severity":  "HIGH",
+            "detail":    hit["detail"],
+            "similar_to": hit["similar_to"],
+        })
+        _typo_found += 1
+if _typo_found:
+    print(f"  Typosquatting: {_typo_found} suspicious package name(s) detected")
 
 audit_result = "BLOCKED" if violations else "PASSED"
 _ecosystems_found = list(dict.fromkeys(d.get("ecosystem", ECOSYSTEM) for d in compile_deps))
@@ -1424,18 +1537,19 @@ DEFAULT_POLICIES_37 = [
      "threshold": 0, "action": "WARN", "enabled": True},
 ]
 
-policy_config_path = os.path.join(OUT, "policy.json")
-if os.path.exists(policy_config_path):
-    try:
-        with open(policy_config_path, encoding="utf-8") as f:
-            custom_pol = json.load(f)
-        overrides = {r["id"]: r for r in custom_pol.get("rules", [])}
-        for pol in DEFAULT_POLICIES_37:
-            if pol["id"] in overrides:
-                pol.update(overrides[pol["id"]])
-        print(f"  Loaded custom policy overrides from policy.json")
-    except Exception as pe:
-        print(f"  Warning: could not load policy.json: {pe}")
+# Apply flat-field overrides from _pol_cfg (loaded in Stage 3) to built-in rules
+if _pol_cfg:
+    for pol in DEFAULT_POLICIES_37:
+        if pol["id"] == "P002" and "max_high_cves" in _pol_cfg:
+            pol["threshold"] = _pol_cfg["max_high_cves"]
+        if pol["id"] == "P003" and "blocked_licenses" in _pol_cfg:
+            pol["blocklist"] = _pol_cfg["blocked_licenses"]
+    # Still honour advanced per-rule overrides via the rules[] array
+    overrides = {r["id"]: r for r in _pol_cfg.get("rules", [])}
+    for pol in DEFAULT_POLICIES_37:
+        if pol["id"] in overrides:
+            pol.update(overrides[pol["id"]])
+    print(f"  Loaded policy overrides from policy.json")
 
 pol_violations, pol_warnings = [], []
 
@@ -1494,6 +1608,37 @@ for pol in DEFAULT_POLICIES_37:
 
     if finding:
         (pol_violations if pol["action"] == "FAIL" else pol_warnings).append(finding)
+
+# P008 — no snapshot/pre-release versions (driven by allow_snapshot_versions in policy.json)
+if not _pol_cfg.get("allow_snapshot_versions", True):
+    _snap_deps = [
+        f"{d.get('group','')}:{d.get('artifact', d.get('name',''))}:{d.get('version','')}"
+        for d in compile_deps
+        if any(kw in str(d.get("version", "")).upper()
+               for kw in ("SNAPSHOT", "-ALPHA", "-BETA", "-RC", ".ALPHA", ".BETA"))
+    ]
+    if _snap_deps:
+        pol_warnings.append({
+            "policy_id": "P008", "policy_name": "No snapshot/pre-release versions",
+            "action": "WARN",
+            "detail": f"{len(_snap_deps)} snapshot/pre-release dep(s): {', '.join(_snap_deps[:3])}",
+            "actual_value": len(_snap_deps), "threshold": 0,
+        })
+
+# P009 — max composite risk score (driven by max_composite_risk_score in policy.json)
+_max_risk_threshold = _pol_cfg.get("max_composite_risk_score")
+if _max_risk_threshold is not None:
+    _over_threshold = [s for s in scored
+                       if s.get("composite_risk_score", 0) > _max_risk_threshold]
+    if _over_threshold:
+        pol_violations.append({
+            "policy_id": "P009", "policy_name": "Max composite risk score exceeded",
+            "action": "FAIL",
+            "detail": (f"{len(_over_threshold)} dep(s) exceed risk threshold {_max_risk_threshold}: "
+                       f"{', '.join(s['artifact'] for s in _over_threshold[:3])}"),
+            "actual_value": _over_threshold[0].get("composite_risk_score", 0),
+            "threshold": _max_risk_threshold,
+        })
 
 policy_result = "FAIL" if pol_violations else ("WARN" if pol_warnings else "PASS")
 day37 = {
@@ -1900,7 +2045,7 @@ def _gate_grype(repo_dir, pr_num):
         return {"gate": "grype-scan", "status": "ERROR", "detail": str(exc)}
 
 
-def _gate_jacoco(repo_dir):
+def _gate_jacoco(repo_dir, min_coverage=80.0):
     if not _mvn_avail:
         return {"gate": "jacoco-coverage", "status": "SKIPPED",
                 "detail": "mvn not found — install Maven or run via CI"}
@@ -1921,14 +2066,14 @@ def _gate_jacoco(repo_dir):
                 mis = int(ctr.attrib["missed"])
                 tot = cov + mis
                 pct = round((cov / tot) * 100, 1) if tot > 0 else 0.0
-                passed = pct >= 80.0
+                passed = pct >= min_coverage
                 return {
                     "gate": "jacoco-coverage",
                     "status": "PASS" if passed else "FAIL",
-                    "line_coverage_pct": pct, "threshold": 80.0,
+                    "line_coverage_pct": pct, "threshold": min_coverage,
                     "lines_covered": cov, "lines_missed": mis, "lines_total": tot,
                     "duration_seconds": round(_time.time() - t0, 1),
-                    "detail": f"Line coverage: {pct}% ({'OK' if passed else 'below 80% threshold'})",
+                    "detail": f"Line coverage: {pct}% ({'OK' if passed else f'below {min_coverage}% threshold'})",
                 }
         return {"gate": "jacoco-coverage", "status": "SKIPPED",
                 "detail": "No LINE counter in jacoco.xml",
@@ -2014,14 +2159,18 @@ for pr in prs:
                          pr.get("ecosystem", ECOSYSTEM))
     g3 = (_gate_grype(repo_dir, pr_num) if cloned and repo_dir
           else {"gate": "grype-scan", "status": "SKIPPED", "detail": _no_clone_msg})
-    g4 = (_gate_jacoco(repo_dir) if cloned and repo_dir
+    _jacoco_min = float(_pol_cfg.get("require_jacoco_coverage_pct", 80))
+    g4 = (_gate_jacoco(repo_dir, min_coverage=_jacoco_min) if cloned and repo_dir
           else {"gate": "jacoco-coverage", "status": "SKIPPED", "detail": _no_clone_msg})
     gates = [g1, g2, g3, g4]
 
     failed  = [g["gate"] for g in gates if g["status"] in ("FAIL", "ERROR")]
+    _auto_merge_types = tuple(_pol_cfg.get("auto_merge_bump_types", ["PATCH", "MINOR"]))
+    _block_major = _pol_cfg.get("block_major_auto_merge", True)
     verdict = (
         "BLOCKED"       if failed else
-        "AUTO_MERGE"    if bt in ("PATCH", "MINOR") else
+        "PENDING_HUMAN" if (_block_major and bt == "MAJOR") else
+        "AUTO_MERGE"    if bt in _auto_merge_types else
         "PENDING_HUMAN"
     )
 
@@ -2095,11 +2244,19 @@ _t0_day6 = _time.time()
 
 
 _PIPELINE_STAGES = [
-    ("day1", "dependency-check-report.json", "CVE scan"),
-    ("day2", "risk-scores.json",             "Risk scoring"),
-    ("day3", "audit-report.json",            "Supply-chain audit"),
-    ("day4", "remediation-manifest.json",    "Auto-remediation"),
-    ("day5", "validation-report.json",       "PR validation"),
+    ("stage1",   "dependency-check-report.json",  "CVE scan"),
+    ("stage1_5", "sbom-cyclonedx.json",            "SBOM generation"),
+    ("stage2",   "risk-scores.json",               "Risk scoring"),
+    ("stage3",   "audit-report.json",              "Supply-chain audit"),
+    ("stage3_5", "secret-scan-report.json",        "Secret detection"),
+    ("stage3_7", "policy-report.json",             "Policy enforcement"),
+    ("stage3_9", "drift-report.json",              "Dependency drift"),
+    ("stage4",   "remediation-manifest.json",      "Auto-remediation"),
+    ("stage5",   "validation-report.json",         "PR validation"),
+    ("stage6",   "e2e-report.json",                "E2E stress test"),
+    ("stage7",   "audit-trail.json",               "Audit trail"),
+    ("stage7",   "dependency-health-report.html",  "Health report"),
+    ("stage7a",  "test-results.json",              "Unit tests"),
 ]
 
 

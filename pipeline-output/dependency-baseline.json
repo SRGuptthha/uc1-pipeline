@@ -1,6 +1,6 @@
 {
-  "snapshot_date": "2026-06-08T14:13:11Z",
-  "project": "scrapy",
+  "snapshot_date": "2026-06-09T09:02:17Z",
+  "project": "uc1-security-demo",
   "dependencies": [
     {
       "key": "org.springframework:spring-core",

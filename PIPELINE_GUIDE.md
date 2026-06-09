@@ -770,20 +770,40 @@ tracked against the saved baseline.
 
 ## 8. CI/CD Integration
 
-### GitHub Actions (generated automatically)
+### GitHub Actions (live in this repo)
 
-Copy the generated workflow to your target repo:
+A production-ready workflow is already wired into this repository at
+`.github/workflows/security-scan.yml`. It requires no setup beyond adding a secret.
+
+**Trigger manually:**
+1. GitHub → **Actions** tab → **UC1 Supply Chain Security Scan** → **Run workflow**
+2. Set `target_repo` (default: demo repo)
+3. Toggle `create_prs = true` to create real PRs (requires `DEMO_REPO_PAT` secret)
+
+**Auto-triggers already wired:**
+
+| Trigger | Condition | What runs |
+| ------- | --------- | --------- |
+| Push to `main` | `run_pipeline.py`, `policy.json`, or the workflow file changed | Full scan (dry-run) |
+| `workflow_dispatch` | Manual via Actions UI | Full scan, optionally with PR creation |
+| Weekly cron | Every Monday 02:00 UTC | Full scan (dry-run) |
+
+**Adding the `DEMO_REPO_PAT` secret** (needed for live PR creation):
+1. GitHub → repo Settings → Secrets and variables → Actions → New repository secret
+2. Name: `DEMO_REPO_PAT`, Value: your GitHub PAT with `repo` scope
+
+All 4 validation gates (mvn test, OWASP re-scan, Grype, JaCoCo) run in CI where the
+Ubuntu runner has Maven and Grype pre-available.
+
+### Generated workflow for other repos
+
+The pipeline also writes a `security-scan.yml` into the output directory at Stage 7.
+Copy it to any target repo to give that repo the same CI/CD coverage:
+
 ```powershell
 Copy-Item pipeline-output/security-scan.yml `
   /path/to/your/repo/.github/workflows/security-scan.yml
 ```
-
-The workflow handles:
-- **On push**: full scan, uploads HTML report as a build artifact
-- **On pull request**: scan + policy gate check (merge blocked if FAIL)
-- **Weekly schedule**: SunStage 2 AM UTC for continuous monitoring
-
-All 4 validation gates run in CI (Ubuntu runner has Maven and Grype available).
 
 ### Jenkins / GitLab CI / Azure DevOps
 
@@ -804,6 +824,22 @@ sys.exit(0 if r['result'] == 'PASS' else 1)
 
 For detailed CI/CD snippets, see
 `skills/dependency-supply-chain-hygiene/references/cicd.md`.
+
+### MCP Server (Claude Code integration)
+
+An MCP server is bundled at `pipeline-output/mcp_server.py` and pre-configured in
+`.mcp.json`. When Claude Code loads this project, the `supply-chain-security` MCP
+server starts automatically.
+
+| Tool | What it does |
+| ---- | ------------ |
+| `scan_repo` | Run the full pipeline against any GitHub URL |
+| `get_health_report` | Return the health report from the last scan |
+| `get_cve_summary` | Return CVE findings from the last scan |
+| `get_policy_status` | Return the policy gate result from the last scan |
+| `create_remediation_prs` | Trigger PR creation for the last scan (needs token) |
+
+This lets Claude drive the entire pipeline conversationally — no terminal required.
 
 ---
 

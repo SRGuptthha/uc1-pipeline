@@ -7,6 +7,8 @@ on:
       - 'pipeline-output/run_pipeline.py'
       - 'pipeline-output/policy.json'
       - '.github/workflows/security-scan.yml'
+  pull_request:
+    branches: [main]
   schedule:
     - cron: '0 2 * * 1'   # every Monday 02:00 UTC
   workflow_dispatch:
@@ -27,6 +29,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      pull-requests: write
 
     steps:
       - name: Checkout uc1-pipeline
@@ -124,6 +127,48 @@ jobs:
               print(f'Could not read audit-trail.json: {e}')
           PYEOF
 
+      - name: Post PR comment with scan summary
+        if: always() && github.event_name == 'pull_request'
+        run: |
+          python3 << 'PYEOF'
+          import json, os, subprocess, sys
+          try:
+              t = json.load(open('pipeline-output/audit-trail.json'))
+              h = t.get('pipeline_health', {})
+              c = t.get('cve_summary', {})
+              grade = h.get('grade', '?')
+              score = h.get('score', '?')
+              label = h.get('label', '')
+              total = c.get('total_cves', 0)
+              crit  = c.get('critical_count', 0)
+              high  = c.get('high_count', 0)
+              grade_emoji = {'A': '🟢', 'B': '🟡', 'C': '🟠', 'D': '🔴', 'F': '🔴'}.get(grade, '⚪')
+              findings = '\n'.join(f'- {f}' for f in t.get('key_findings', [])[:5])
+              body = (
+                  f"## {grade_emoji} UC1 Security Scan\n\n"
+                  f"**Grade:** {grade} ({score}/100) {label}\n\n"
+                  f"- **Repo:** {t.get('repo_url', 'n/a')}\n"
+                  f"- **Language:** {t.get('language', 'n/a')} / {t.get('ecosystem', 'n/a')}\n"
+                  f"- **CVEs found:** {total} (Critical: {crit}, High: {high})\n\n"
+                  f"### Key Findings\n"
+                  f"{findings or '_No findings._'}\n\n"
+                  f"> Full HTML report is available as a workflow artifact.\n"
+              )
+              pr_num = os.environ.get('PR_NUMBER', '')
+              if not pr_num:
+                  sys.exit(0)
+              repo = os.environ.get('GITHUB_REPOSITORY', '')
+              subprocess.run(
+                  ['gh', 'pr', 'comment', pr_num, '--repo', repo, '--body', body],
+                  check=True)
+          except Exception as e:
+              print(f'Could not post PR comment: {e}')
+          PYEOF
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+
       - name: Upload security artifacts
         uses: actions/upload-artifact@v4
         if: always()
@@ -140,6 +185,7 @@ jobs:
           retention-days: 90
 
       - name: Policy gate — fail build on critical violations
+        if: always()
         run: |
           python3 << 'PYEOF'
           import json, sys

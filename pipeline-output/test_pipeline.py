@@ -53,9 +53,10 @@ parse_pom_plugins     = _mod.parse_pom_plugins
 parse_requirements_txt= _mod.parse_requirements_txt
 parse_package_json    = _mod.parse_package_json
 parse_csproj          = _mod.parse_csproj
-parse_gemfile         = _mod.parse_gemfile
-parse_go_mod          = _mod.parse_go_mod
-_osv_package_spec     = _mod._osv_package_spec
+parse_gemfile           = _mod.parse_gemfile
+parse_go_mod            = _mod.parse_go_mod
+parse_pyproject_toml    = _mod.parse_pyproject_toml
+_osv_package_spec       = _mod._osv_package_spec
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -500,6 +501,163 @@ class TestOsvPackageSpec(unittest.TestCase):
         dep  = {"ecosystem": "Go", "group": "", "artifact": "github.com/gin-gonic/gin"}
         spec = _osv_package_spec(dep)
         self.assertEqual(spec["ecosystem"], "Go")
+
+
+class TestParsePyprojectToml(unittest.TestCase):
+    PEP517 = """\
+[project]
+name = "myapp"
+dependencies = [
+    "flask>=2.3.0",
+    "requests==2.31.0",
+    "sqlalchemy>=1.4,<2.0",
+]
+"""
+    POETRY = """\
+[tool.poetry.dependencies]
+python = "^3.9"
+flask = "^2.3.0"
+requests = "2.31.0"
+"""
+
+    def test_pep517_finds_deps(self):
+        deps = parse_pyproject_toml(self.PEP517)
+        names = [d["artifact"] for d in deps]
+        self.assertIn("flask", names)
+        self.assertIn("requests", names)
+        self.assertIn("sqlalchemy", names)
+
+    def test_pep517_ecosystem_pypi(self):
+        deps = parse_pyproject_toml(self.PEP517)
+        self.assertTrue(all(d["ecosystem"] == "PyPI" for d in deps))
+
+    def test_poetry_finds_deps(self):
+        deps = parse_pyproject_toml(self.POETRY)
+        names = [d["artifact"] for d in deps]
+        self.assertIn("flask", names)
+        self.assertIn("requests", names)
+        self.assertNotIn("python", names)  # python itself must be skipped
+
+    def test_empty_returns_empty(self):
+        self.assertEqual(parse_pyproject_toml(""), [])
+
+    def test_no_dependencies_section(self):
+        self.assertEqual(parse_pyproject_toml("[build-system]\nrequires=[]\n"), [])
+
+
+class TestPatchManifestExtra(unittest.TestCase):
+    """Additional patch_manifest coverage for RubyGems and Maven dispatcher."""
+
+    def test_gemfile(self):
+        content = "source 'https://rubygems.org'\ngem 'rails', '~> 6.1'\ngem 'puma', '5.6.5'\n"
+        dep     = {"ecosystem": "RubyGems", "artifact": "puma", "group": "", "version": "5.6.5"}
+        patched, changed = patch_manifest(content, dep, "6.0.0")
+        self.assertTrue(changed)
+        self.assertIn("6.0.0", patched)
+
+    def test_pom_xml_via_dispatcher(self):
+        content = (
+            "<project>\n"
+            "  <dependencies>\n"
+            "    <dependency>\n"
+            "      <groupId>org.apache.logging.log4j</groupId>\n"
+            "      <artifactId>log4j-core</artifactId>\n"
+            "      <version>2.14.1</version>\n"
+            "    </dependency>\n"
+            "  </dependencies>\n"
+            "</project>\n"
+        )
+        dep = {"ecosystem": "Maven", "artifact": "log4j-core",
+               "group": "org.apache.logging.log4j", "version": "2.14.1"}
+        patched, changed = patch_manifest(content, dep, "2.26.0")
+        self.assertTrue(changed)
+        self.assertIn("2.26.0", patched)
+
+    def test_no_change_when_version_missing(self):
+        content = "gem 'rails', '~> 7.0'\n"
+        dep     = {"ecosystem": "RubyGems", "artifact": "nonexistent", "group": "", "version": "1.0.0"}
+        _patched, changed = patch_manifest(content, dep, "2.0.0")
+        self.assertFalse(changed)
+
+
+class TestParsePomPluginsExtra(unittest.TestCase):
+    POM_MULTI = """\
+<project>
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.10.1</version>
+      </plugin>
+      <plugin>
+        <groupId>org.jacoco</groupId>
+        <artifactId>jacoco-maven-plugin</artifactId>
+        <version>0.8.10</version>
+      </plugin>
+    </plugins>
+  </build>
+</project>"""
+
+    POM_PROP_VERSION = """\
+<project>
+  <properties>
+    <compiler.version>3.11.0</compiler.version>
+  </properties>
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>${compiler.version}</version>
+      </plugin>
+    </plugins>
+  </build>
+</project>"""
+
+    def test_finds_multiple_plugins(self):
+        plugins = parse_pom_plugins(self.POM_MULTI, {})
+        self.assertEqual(len(plugins), 2)
+        artifacts = [p["artifact"] for p in plugins]
+        self.assertIn("maven-compiler-plugin", artifacts)
+        self.assertIn("jacoco-maven-plugin", artifacts)
+
+    def test_property_version_resolved(self):
+        props   = {"compiler.version": "3.11.0"}
+        plugins = parse_pom_plugins(self.POM_PROP_VERSION, props)
+        self.assertEqual(len(plugins), 1)
+        self.assertEqual(plugins[0]["version"], "3.11.0")
+
+    def test_malformed_pom_returns_empty(self):
+        plugins = parse_pom_plugins("not xml at all", {})
+        self.assertEqual(plugins, [])
+
+
+class TestEdgeCases(unittest.TestCase):
+    def test_empty_requirements_txt(self):
+        self.assertEqual(parse_requirements_txt(""), [])
+
+    def test_requirements_txt_only_comments(self):
+        self.assertEqual(parse_requirements_txt("# just a comment\n"), [])
+
+    def test_package_json_no_dependencies_key(self):
+        self.assertEqual(parse_package_json(json.dumps({"name": "app"})), [])
+
+    def test_go_mod_empty(self):
+        self.assertEqual(parse_go_mod("module example.com/app\n\ngo 1.21\n"), [])
+
+    def test_csproj_no_packages(self):
+        self.assertEqual(parse_csproj("<Project></Project>"), [])
+
+    def test_gemfile_no_gems(self):
+        self.assertEqual(parse_gemfile("source 'https://rubygems.org'\n"), [])
+
+    def test_bump_type_equal_versions(self):
+        self.assertEqual(bump_type("1.2.3", "1.2.3"), "PATCH")
+
+    def test_bump_type_non_semver(self):
+        result = bump_type("old", "new")
+        self.assertIn(result, ("PATCH", "MINOR", "MAJOR"))  # must return something valid
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -418,6 +418,8 @@ toc = [
     ("11","Skills",                             "8 Specialist Capability Modules"),
     ("12","Documentation Files",                "README · SETUP · PIPELINE_GUIDE · FLOW_DIAGRAM"),
     ("13","Utility Scripts",                    "generate_ppt.py · e2e_language_test.py"),
+    ("13a","GitHub Actions Workflow",           ".github/workflows/security-scan.yml"),
+    ("13b","MCP Server",                        "pipeline-output/mcp_server.py · .mcp.json"),
     ("14","First-Run Quick Guide",              "Step-by-Step for New Users"),
     ("15","Glossary",                           "Key Terms Explained"),
 ]
@@ -520,8 +522,14 @@ add_spacer()
 
 tree_lines = [
     "UC1/",
+    "├── .mcp.json                 ← MCP server config (auto-loaded by Claude Code)",
+    "├── .github/",
+    "│   └── workflows/",
+    "│       └── security-scan.yml ← Live GitHub Actions CI/CD workflow",
+    "│",
     "├── pipeline-output/          ← Main working directory (run everything from here)",
     "│   ├── run_pipeline.py       ← MAIN SCRIPT — the entire pipeline in one file",
+    "│   ├── mcp_server.py         ← MCP server exposing pipeline as Claude tools",
     "│   ├── test_pipeline.py      ← 63 unit tests for the pipeline helpers",
     "│   ├── policy.json           ← Security policy thresholds (edit to customise)",
     "│   ├── .gitleaks.toml        ← Secret-detection allow-list",
@@ -825,7 +833,7 @@ data_table(
         ("dependency-health-report.html","Stage 7",  "The interactive HTML dashboard (see Section 7). Open this in a browser. Self-contained — all data is embedded, no server needed."),
         ("audit-trail.json",             "Stage 7",  "Complete audit record of the entire pipeline run: all stage results, health score, key findings, language/ecosystem detected, manifest filename, timestamps."),
         ("test-results.json",            "Stage 7a", "Results of all 63 unit tests: test name, status (PASS/FAIL), and any failure detail message."),
-        ("security-scan.yml",            "Stage 7",  "A ready-to-use GitHub Actions CI/CD workflow. Copy this file to .github/workflows/ in your target repository to run the UC1 pipeline automatically on every push."),
+        ("security-scan.yml",            "Stage 7",  "A ready-to-use GitHub Actions CI/CD workflow generated for the scanned repo. Copy to .github/workflows/ in any target repository. Note: the UC1 repo itself already has a live workflow at .github/workflows/security-scan.yml."),
     ],
     col_widths=[5, 2, 9]
 )
@@ -1042,6 +1050,59 @@ page_break()
 # ══════════════════════════════════════════════════════════════════════════════
 add_heading("13. Utility Scripts", level=1)
 
+add_heading("GitHub Actions Workflow", level=2, color=GREEN)
+banner(".github/workflows/security-scan.yml  —  Live CI/CD Pipeline", bg=GREEN)
+add_para(
+    "A production-ready GitHub Actions workflow is already wired into this repository. "
+    "It does not need to be generated or copied — it is active and triggers automatically.",
+    size=10.5
+)
+add_spacer()
+data_table(
+    ["Trigger", "Condition", "What Runs"],
+    [
+        ("Push to main",        "run_pipeline.py, policy.json, or workflow file changed",  "Full pipeline scan (dry-run, no PRs)"),
+        ("workflow_dispatch",   "Manual via Actions UI — choose repo + create_prs toggle", "Full pipeline; live PRs if DEMO_REPO_PAT secret is set"),
+        ("Scheduled cron",      "Every Monday 02:00 UTC",                                  "Full pipeline scan (dry-run)"),
+    ],
+    col_widths=[3.5, 8.5, 4]
+)
+info_box([
+    "  To enable live PR creation from the workflow:",
+    "  1. GitHub → repo Settings → Secrets and variables → Actions",
+    "  2. Add secret: DEMO_REPO_PAT = your GitHub PAT with repo scope",
+    "  3. Trigger the workflow with create_prs = true",
+], strip_color=GREEN, bg=LGREEN, label="ENABLING LIVE PR CREATION")
+add_spacer()
+
+add_heading("MCP Server (Claude Code integration)", level=2, color=TEAL)
+banner("pipeline-output/mcp_server.py  +  .mcp.json  —  Claude Code Tools", bg=TEAL)
+add_para(
+    "An MCP (Model Context Protocol) server is bundled at pipeline-output/mcp_server.py "
+    "and pre-configured in .mcp.json at the project root. When Claude Code opens this "
+    "project the supply-chain-security MCP server starts automatically, exposing the "
+    "entire pipeline as five conversational tools — no terminal commands needed.",
+    size=10.5
+)
+add_spacer()
+data_table(
+    ["Tool", "What It Does"],
+    [
+        ("scan_repo",               "Run the full pipeline against any GitHub repo URL. Returns the health report on completion."),
+        ("get_health_report",       "Return the health grade, score, and stage results from the most recent scan."),
+        ("get_cve_summary",         "Return the CVE findings (counts by severity, top CVEs) from the most recent scan."),
+        ("get_policy_status",       "Return the policy gate PASS/FAIL result and any violations from the most recent scan."),
+        ("create_remediation_prs",  "Trigger GitHub PR creation for the most recent scan results. Requires a GitHub token."),
+    ],
+    col_widths=[4, 12]
+)
+add_para(
+    "The .mcp.json config file simply points at the server script — "
+    "no additional install or environment setup is required beyond Python 3.9+.",
+    size=10, italic=True, color=MGRAY
+)
+add_spacer(2)
+
 add_heading("generate_ppt.py", level=2, color=ORANGE)
 banner("generate_ppt.py  —  PowerPoint Presentation Generator", bg=ORANGE)
 add_para(
@@ -1090,7 +1151,7 @@ add_spacer()
 add_heading("pipeline-output/setup_demo_repo.py", level=2, color=MGRAY)
 add_para(
     "A one-time utility script that seeds the demo GitHub repository "
-    "(github.com/SRGuptha/uc1-security-demo) with a pom.xml containing 7 known-vulnerable "
+    "(github.com/SRGuptthha/uc1-security-demo) with a pom.xml containing 7 known-vulnerable "
     "Maven dependencies (Log4Shell, Spring4Shell, Text4Shell, H2 RCE, SnakeYAML DoS, etc.). "
     "Run this once to prepare the demo repo. Requires a GitHub token with write access.",
     size=10.5
@@ -1121,7 +1182,7 @@ steps = [
      'Run the pipeline against the demo repository. No GitHub token needed in dry-run mode. '
      'The pipeline will scan the repo, find CVEs, and generate all reports locally. '
      'Nothing is written to GitHub.',
-     "python pipeline-output/run_pipeline.py https://github.com/SRGuptha/uc1-security-demo"),
+     "python pipeline-output/run_pipeline.py https://github.com/SRGuptthha/uc1-security-demo"),
 
     ("Step 4", "Watch the Output", AMBER,
      'You will see the pipeline progress through each stage printed to the terminal. '
@@ -1137,7 +1198,7 @@ steps = [
     ("Step 6", "Run with Live Mode (Optional)", ORANGE,
      'To create a real fix branch and pull request on GitHub, add your Personal Access Token. '
      'See SETUP.md Section 3 for instructions on creating a GitHub PAT.',
-     "python pipeline-output/run_pipeline.py https://github.com/SRGuptha/uc1-security-demo --token ghp_xxxx"),
+     "python pipeline-output/run_pipeline.py https://github.com/SRGuptthha/uc1-security-demo --token ghp_xxxx"),
 ]
 
 for step_num, step_title, color, desc, code in steps:

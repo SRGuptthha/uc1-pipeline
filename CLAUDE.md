@@ -40,16 +40,16 @@ os.environ["_UC1_IMPORT_ONLY"] = "1"
 ```
 
 ## Demo repo
-`https://github.com/SRGuptha/uc1-security-demo` — pre-seeded with 7 vulnerable
+`https://github.com/SRGuptthha/uc1-security-demo` — pre-seeded with 7 vulnerable
 Maven deps (Log4Shell, Spring4Shell, Text4Shell, H2 RCE, SnakeYAML DoS, etc.)
 
 ## Run commands
 ```powershell
 # Dry-run
-python pipeline-output/run_pipeline.py https://github.com/SRGuptha/uc1-security-demo
+python pipeline-output/run_pipeline.py https://github.com/SRGuptthha/uc1-security-demo
 
 # Live (creates PR)
-python pipeline-output/run_pipeline.py https://github.com/SRGuptha/uc1-security-demo --token ghp_xxx
+python pipeline-output/run_pipeline.py https://github.com/SRGuptthha/uc1-security-demo --token ghp_xxx
 
 # Unit tests only
 python pipeline-output/test_pipeline.py

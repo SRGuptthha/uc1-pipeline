@@ -113,7 +113,7 @@ multi-module Maven projects, point the URL at the subdirectory containing `pom.x
 If you do not have a target repo yet, use the pre-seeded demo repo:
 
 ```
-https://github.com/SRGuptha/uc1-security-demo
+https://github.com/SRGuptthha/uc1-security-demo
 ```
 
 This repo contains a `pom.xml` with 7 known-vulnerable dependencies (Log4Shell,
@@ -198,8 +198,13 @@ d:\ClaudeUC\UC1\
 ├── SETUP.md                          ← This file
 ├── README.md
 ├── PIPELINE_GUIDE.md
+├── .mcp.json                         ← MCP server config (auto-loaded by Claude Code)
+├── .github\
+│   └── workflows\
+│       └── security-scan.yml         ← Live GitHub Actions workflow (already wired up)
 ├── pipeline-output\
 │   ├── run_pipeline.py               ← Main script — run this
+│   ├── mcp_server.py                 ← MCP server for Claude Code integration
 │   ├── test_pipeline.py              ← Unit tests (run by pipeline automatically)
 │   ├── policy.json                   ← Policy thresholds (edit to customise)
 │   ├── .gitleaks.toml                ← Secret detection allow-list (edit if needed)
@@ -220,20 +225,20 @@ No installation, compilation, or environment setup is required beyond Python.
 
 ```powershell
 cd d:\ClaudeUC\UC1
-python pipeline-output/run_pipeline.py https://github.com/SRGuptha/uc1-security-demo
+python pipeline-output/run_pipeline.py https://github.com/SRGuptthha/uc1-security-demo
 ```
 
 ### Live mode (with token — creates a real fix branch and PR on GitHub)
 
 ```powershell
-python pipeline-output/run_pipeline.py https://github.com/SRGuptha/uc1-security-demo `
+python pipeline-output/run_pipeline.py https://github.com/SRGuptthha/uc1-security-demo `
   --token ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 ```
 
 ### Write outputs to a custom directory
 
 ```powershell
-python pipeline-output/run_pipeline.py https://github.com/SRGuptha/uc1-security-demo `
+python pipeline-output/run_pipeline.py https://github.com/SRGuptthha/uc1-security-demo `
   --token ghp_xxxx `
   --out-dir C:\scans\uc1-demo
 ```
@@ -248,8 +253,8 @@ the demo repo typically completes in **30–90 seconds** depending on network sp
 ```
 ==============================================================
   UC1 Supply Chain Security Pipeline
-  Repo : SRGuptha/uc1-security-demo
-  URL  : https://github.com/SRGuptha/uc1-security-demo
+  Repo : SRGuptthha/uc1-security-demo
+  URL  : https://github.com/SRGuptthha/uc1-security-demo
   Mode : LIVE (real PRs)     ← or DRY-RUN if no token
 ==============================================================
 Language    : java-maven
@@ -342,3 +347,33 @@ python run_pipeline.py <github-url> [options]
 - [ ] (Optional) Maven + Git installed for full PR validation gates
 - [ ] Run the pipeline: `python pipeline-output/run_pipeline.py <github-url> [--token ...]`
 - [ ] Open `dependency-health-report.html` in a browser to view results
+
+---
+
+## GitHub Actions (already set up)
+
+The workflow at `.github/workflows/security-scan.yml` is live. To trigger it manually:
+
+1. Go to the repo on GitHub → **Actions** tab
+2. Click **UC1 Supply Chain Security Scan** → **Run workflow**
+3. Set `target_repo` (default: demo repo) and toggle `create_prs` if you want real PRs
+4. Add a `DEMO_REPO_PAT` secret (Settings → Secrets) for live PR creation
+
+The workflow also runs automatically every Monday at 02:00 UTC and on every push to
+`main` that touches `run_pipeline.py` or `policy.json`.
+
+---
+
+## MCP Server (Claude Code — already configured)
+
+The file `.mcp.json` at the project root pre-configures the `supply-chain-security`
+MCP server. When you open this project in Claude Code the server starts automatically.
+
+You can verify the connection by asking Claude:
+
+```text
+get_health_report
+```
+
+Five tools are available: `scan_repo`, `get_health_report`, `get_cve_summary`,
+`get_policy_status`, `create_remediation_prs`. No extra setup is needed.

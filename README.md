@@ -164,16 +164,43 @@ project root. See `pipeline-output/.gitleaks.toml` for an example.
 
 ## CI/CD Integration
 
-The pipeline generates a ready-to-use GitHub Actions workflow at `security-scan.yml`.
-Copy it to your target repo:
+### GitHub Actions (live in this repo)
+
+A production-ready workflow is already wired into this repository at
+`.github/workflows/security-scan.yml`. It triggers:
+
+- **On push** to `main` when `run_pipeline.py`, `policy.json`, or the workflow file changes
+- **Manually** via `workflow_dispatch` (Actions tab → Run workflow) — choose target repo and whether to create PRs
+- **Weekly** every Monday at 02:00 UTC
+
+To create real remediation PRs from the workflow, add a `DEMO_REPO_PAT` secret to the
+repo (Settings → Secrets → New repository secret) with a token that has `repo` scope.
+
+### Generated workflow for other repos
+
+The pipeline also emits a `security-scan.yml` into the output directory at Stage 7.
+Copy it to any target repo to give that repo the same CI/CD coverage:
 
 ```bash
 cp pipeline-output/security-scan.yml /path/to/your/repo/.github/workflows/security-scan.yml
 ```
 
-The workflow triggers on push, pull requests, and a weekly schedule. It runs the full
-pipeline, uploads the HTML report as an artifact, and posts a policy gate status check
-on PRs.
+## MCP Server (Claude Code integration)
+
+An MCP server is bundled at `pipeline-output/mcp_server.py` and pre-configured in
+`.mcp.json`. When Claude Code loads this project the `supply-chain-security` MCP
+server starts automatically, exposing five tools:
+
+| Tool | Description |
+|------|-------------|
+| `scan_repo` | Run the full pipeline against any GitHub repo URL |
+| `get_health_report` | Return the health report from the most recent scan |
+| `get_cve_summary` | Return the CVE findings from the most recent scan |
+| `get_policy_status` | Return the policy gate result from the most recent scan |
+| `create_remediation_prs` | Trigger PR creation for the most recent scan (needs token) |
+
+These tools let Claude drive the entire supply chain pipeline conversationally — no
+terminal commands needed.
 
 ---
 
@@ -182,8 +209,15 @@ on PRs.
 ```
 UC1/
 ├── README.md                          ← This file
+├── SETUP.md                           ← First-run checklist
+├── PIPELINE_GUIDE.md                  ← Stage-by-stage documentation
+├── .mcp.json                          ← MCP server config (auto-loaded by Claude Code)
+├── .github/
+│   └── workflows/
+│       └── security-scan.yml          ← Live GitHub Actions workflow
 ├── pipeline-output/
 │   ├── run_pipeline.py                ← Main executable (single-file, stdlib only)
+│   ├── mcp_server.py                  ← MCP server exposing pipeline as Claude tools
 │   ├── policy.json                    ← Example policy configuration
 │   ├── .gitleaks.toml                 ← Example secret detection config
 │   ├── dependency-health-report.html  ← Sample HTML report (WebGoat scan)
