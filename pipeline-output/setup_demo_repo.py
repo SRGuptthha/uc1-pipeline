@@ -2,7 +2,7 @@
 import json, urllib.request, ssl, base64, time, sys
 
 TOKEN = sys.argv[1]
-OWNER = "SRGuptha"
+OWNER = "SRGuptthha"
 REPO  = "uc1-security-demo"
 
 ctx = ssl.create_default_context()
@@ -45,7 +45,7 @@ POM = """\
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
-  <groupId>com.srguptha</groupId>
+  <groupId>com.SRGuptthha</groupId>
   <artifactId>uc1-security-demo</artifactId>
   <version>1.0.0</version>
   <packaging>jar</packaging>
