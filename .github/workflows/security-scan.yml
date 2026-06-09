@@ -16,7 +16,15 @@ on:
       target_repo:
         description: 'GitHub repo URL to scan'
         required: false
-        default: 'https://github.com/SRGuptthha/uc1-security-demo'
+        default: 'https://github.com/SRGuptthha/testUC1'
+      target_branch:
+        description: 'Branch to scan (e.g. DEV, main, master)'
+        required: false
+        default: 'DEV'
+      manifest_subdir:
+        description: 'Subdirectory containing pom.xml / manifest (leave blank for repo root)'
+        required: false
+        default: 'Java files'
       create_prs:
         description: 'Create remediation PRs? (requires DEMO_REPO_PAT secret)'
         required: false
@@ -43,45 +51,51 @@ jobs:
       - name: Determine scan target
         id: target
         run: |
-          REPO="${{ github.event.inputs.target_repo || 'https://github.com/SRGuptthha/uc1-security-demo' }}"
-          echo "repo=$REPO" >> $GITHUB_OUTPUT
+          REPO="${{ github.event.inputs.target_repo || 'https://github.com/SRGuptthha/testUC1' }}"
+          BRANCH="${{ github.event.inputs.target_branch || 'DEV' }}"
+          SUBDIR="${{ github.event.inputs.manifest_subdir || 'Java files' }}"
+          echo "repo=$REPO"       >> $GITHUB_OUTPUT
+          echo "branch=$BRANCH"   >> $GITHUB_OUTPUT
+          echo "subdir=$SUBDIR"   >> $GITHUB_OUTPUT
 
-      - name: Seed demo repo manifest
-        env:
-          DEMO_REPO_PAT: ${{ secrets.DEMO_REPO_PAT }}
+      - name: Fetch manifest from target repo
         run: |
-          # Try to fetch pom.xml from the target repo first
           OWNER=$(echo "${{ steps.target.outputs.repo }}" | sed 's|https://github.com/||' | cut -d'/' -f1)
           REPO=$(echo  "${{ steps.target.outputs.repo }}" | sed 's|https://github.com/||' | cut -d'/' -f2)
-          echo "Target: $OWNER/$REPO"
+          BRANCH="${{ steps.target.outputs.branch }}"
+          SUBDIR="${{ steps.target.outputs.subdir }}"
+          echo "Scanning: $OWNER/$REPO  branch=$BRANCH  subdir=${SUBDIR:-<root>}"
+
+          # URL-encode spaces in subdir path
+          SUBDIR_ENC=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$SUBDIR'))")
+
+          # Build candidate paths: specified branch+subdir first, then root fallbacks
+          declare -a CANDIDATES
+          if [ -n "$SUBDIR" ]; then
+            CANDIDATES+=("$BRANCH/$SUBDIR_ENC/pom.xml")
+            CANDIDATES+=("$BRANCH/pom.xml")
+          else
+            CANDIDATES+=("$BRANCH/pom.xml")
+          fi
+          # Also try common default branches at root as last resort
+          for fb in main master develop; do
+            [ "$fb" != "$BRANCH" ] && CANDIDATES+=("$fb/pom.xml")
+          done
 
           FOUND=0
-          for branch in main master develop; do
-            HTTP=$(curl -sL -w "%{http_code}" -o pipeline-output/pom.xml \
-              "https://raw.githubusercontent.com/$OWNER/$REPO/$branch/pom.xml")
-            if [ "$HTTP" = "200" ]; then
-              echo "✓ Fetched pom.xml from $branch ($(wc -c < pipeline-output/pom.xml) bytes)"
+          for PATH_SUFFIX in "${CANDIDATES[@]}"; do
+            URL="https://raw.githubusercontent.com/$OWNER/$REPO/$PATH_SUFFIX"
+            HTTP=$(curl -sL -w "%{http_code}" -o pipeline-output/pom.xml "$URL")
+            if [ "$HTTP" = "200" ] && [ -s pipeline-output/pom.xml ]; then
+              echo "Fetched pom.xml from $PATH_SUFFIX ($(wc -c < pipeline-output/pom.xml) bytes)"
               FOUND=1; break
             fi
           done
 
-          # If repo has no pom.xml yet, push it (requires DEMO_REPO_PAT secret)
-          if [ "$FOUND" = "0" ] && [ -n "$DEMO_REPO_PAT" ]; then
-            echo "pom.xml not found — seeding demo repo via setup_demo_repo.py..."
-            python pipeline-output/setup_demo_repo.py "$DEMO_REPO_PAT"
-            sleep 3
-            # Now fetch the freshly committed pom.xml
-            HTTP=$(curl -sL -w "%{http_code}" -o pipeline-output/pom.xml \
-              "https://raw.githubusercontent.com/$OWNER/$REPO/main/pom.xml")
-            [ "$HTTP" = "200" ] && FOUND=1 && echo "✓ Fetched pom.xml after seeding"
-          fi
-
-          # Last resort: copy committed fallback pom.xml (avoids YAML-breaking heredoc)
           if [ "$FOUND" = "0" ]; then
-            echo "Writing known vulnerable pom.xml directly..."
-            python3 pipeline-output/setup_demo_repo.py --write-local pipeline-output/pom.xml 2>/dev/null || \
-              cp pipeline-output/fallback-pom.xml pipeline-output/pom.xml
-            echo "✓ Wrote pom.xml locally ($(wc -c < pipeline-output/pom.xml) bytes)"
+            echo "ERROR: Could not fetch pom.xml from any candidate path in $OWNER/$REPO"
+            echo "Tried: ${CANDIDATES[*]}"
+            exit 1
           fi
 
       - name: Run pipeline (dry-run)

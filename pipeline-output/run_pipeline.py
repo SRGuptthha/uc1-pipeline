@@ -1808,7 +1808,7 @@ print(f"  Written: drift-report.json")
 if drift_mode == "DIFF":
     print(f"  Updated: dependency-baseline.json")
     if drift_risk_flags > 0:
-        print(f"  ⚠  {drift_risk_flags} newly added/upgraded dep(s) have CVEs — review recommended")
+        print(f"  [!] {drift_risk_flags} newly added/upgraded dep(s) have CVEs - review recommended")
 else:
     print(f"  Written: dependency-baseline.json  (initial baseline)")
 _stage_times["day3"] = round(_time.time() - _t0_day3, 1)

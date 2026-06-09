@@ -1,13 +1,7 @@
 {
-  "snapshot_date": "2026-06-09T09:02:17Z",
-  "project": "uc1-security-demo",
+  "snapshot_date": "2026-06-09T14:21:47Z",
+  "project": "testUC1",
   "dependencies": [
-    {
-      "key": "org.springframework:spring-core",
-      "version": "5.3.20",
-      "scope": "compile",
-      "purl": "pkg:maven/org.springframework/spring-core@5.3.20"
-    },
     {
       "key": "org.apache.logging.log4j:log4j-core",
       "version": "2.14.1",
@@ -15,16 +9,16 @@
       "purl": "pkg:maven/org.apache.logging.log4j/log4j-core@2.14.1"
     },
     {
-      "key": "com.fasterxml.jackson.core:jackson-databind",
-      "version": "2.13.0",
+      "key": "org.apache.logging.log4j:log4j-api",
+      "version": "2.14.1",
       "scope": "compile",
-      "purl": "pkg:maven/com.fasterxml.jackson.core/jackson-databind@2.13.0"
+      "purl": "pkg:maven/org.apache.logging.log4j/log4j-api@2.14.1"
     },
     {
-      "key": "org.apache.commons:commons-text",
-      "version": "1.9",
+      "key": "com.fasterxml.jackson.core:jackson-databind",
+      "version": "2.9.8",
       "scope": "compile",
-      "purl": "pkg:maven/org.apache.commons/commons-text@1.9"
+      "purl": "pkg:maven/com.fasterxml.jackson.core/jackson-databind@2.9.8"
     },
     {
       "key": "org.yaml:snakeyaml",
@@ -33,10 +27,64 @@
       "purl": "pkg:maven/org.yaml/snakeyaml@1.30"
     },
     {
-      "key": "com.h2database:h2",
-      "version": "2.1.210",
+      "key": "commons-collections:commons-collections",
+      "version": "3.2.1",
       "scope": "compile",
-      "purl": "pkg:maven/com.h2database/h2@2.1.210"
+      "purl": "pkg:maven/commons-collections/commons-collections@3.2.1"
+    },
+    {
+      "key": "org.springframework:spring-core",
+      "version": "5.3.16",
+      "scope": "compile",
+      "purl": "pkg:maven/org.springframework/spring-core@5.3.16"
+    },
+    {
+      "key": "org.springframework:spring-web",
+      "version": "5.3.16",
+      "scope": "compile",
+      "purl": "pkg:maven/org.springframework/spring-web@5.3.16"
+    },
+    {
+      "key": "org.apache.commons:commons-text",
+      "version": "1.9",
+      "scope": "compile",
+      "purl": "pkg:maven/org.apache.commons/commons-text@1.9"
+    },
+    {
+      "key": "com.google.guava:guava",
+      "version": "24.1.1-jre",
+      "scope": "compile",
+      "purl": "pkg:maven/com.google.guava/guava@24.1.1-jre"
+    },
+    {
+      "key": "org.apache.httpcomponents:httpclient",
+      "version": "4.5.3",
+      "scope": "compile",
+      "purl": "pkg:maven/org.apache.httpcomponents/httpclient@4.5.3"
+    },
+    {
+      "key": "org.apache.maven.plugins:maven-compiler-plugin",
+      "version": "3.1",
+      "scope": "plugin",
+      "purl": "pkg:maven/org.apache.maven.plugins/maven-compiler-plugin@3.1"
+    },
+    {
+      "key": "org.apache.maven.plugins:maven-surefire-plugin",
+      "version": "2.18.1",
+      "scope": "plugin",
+      "purl": "pkg:maven/org.apache.maven.plugins/maven-surefire-plugin@2.18.1"
+    },
+    {
+      "key": "org.apache.maven.plugins:maven-shade-plugin",
+      "version": "2.4.3",
+      "scope": "plugin",
+      "purl": "pkg:maven/org.apache.maven.plugins/maven-shade-plugin@2.4.3"
+    },
+    {
+      "key": "org.apache.maven.plugins:maven-jar-plugin",
+      "version": "2.4",
+      "scope": "plugin",
+      "purl": "pkg:maven/org.apache.maven.plugins/maven-jar-plugin@2.4"
     }
   ]
 }
