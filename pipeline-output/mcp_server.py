@@ -12,9 +12,10 @@ from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
-HERE     = Path(__file__).parent
-PIPELINE = HERE / "run_pipeline.py"
-OUT_DIR  = HERE  # pipeline writes output files here
+HERE      = Path(__file__).parent
+PIPELINE  = HERE / "run_pipeline.py"
+PREFLIGHT = HERE / "preflight.py"
+OUT_DIR   = HERE  # pipeline writes output files here
 
 mcp = FastMCP("supply-chain-security")
 
@@ -400,6 +401,31 @@ def update_policy(field: str, value: str) -> str:
     return (f"Updated policy.json:\n"
             f"  {field}: {old_value!r} → {parsed!r}\n\n"
             f"Run scan_repo to apply the new policy to the next scan.")
+
+
+@mcp.tool()
+def preflight() -> str:
+    """
+    Check pipeline dependencies and install grype + syft if not present.
+    Call this once on a new machine before using scan_repo.
+    Downloads binaries directly from GitHub releases — no curl, winget,
+    or package manager required. Safe to call multiple times (idempotent).
+    """
+    if not PREFLIGHT.exists():
+        return f"preflight.py not found — expected at: {PREFLIGHT}"
+    try:
+        result = subprocess.run(
+            [sys.executable, str(PREFLIGHT)],
+            capture_output=True, text=True, timeout=300
+        )
+        output = result.stdout
+        if result.returncode != 0 and result.stderr:
+            output += "\nSTDERR:\n" + result.stderr[-1000:]
+        return output
+    except subprocess.TimeoutExpired:
+        return "Preflight timed out (>300s) — check network connectivity."
+    except Exception as exc:
+        return f"Preflight failed: {exc}"
 
 
 if __name__ == "__main__":
