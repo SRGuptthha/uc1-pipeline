@@ -53,7 +53,7 @@ jobs:
         run: |
           REPO="${{ github.event.inputs.target_repo || 'https://github.com/SRGuptthha/testUC1' }}"
           BRANCH="${{ github.event.inputs.target_branch || 'DEV' }}"
-          SUBDIR="${{ github.event.inputs.manifest_subdir || 'Java files' }}"
+          SUBDIR="${{ github.event.inputs.manifest_subdir || '' }}"
           echo "repo=$REPO"       >> $GITHUB_OUTPUT
           echo "branch=$BRANCH"   >> $GITHUB_OUTPUT
           echo "subdir=$SUBDIR"   >> $GITHUB_OUTPUT
@@ -69,32 +69,35 @@ jobs:
           # URL-encode spaces in subdir path
           SUBDIR_ENC=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$SUBDIR'))")
 
-          # Build candidate paths: specified branch+subdir first, then root fallbacks
-          declare -a CANDIDATES
-          if [ -n "$SUBDIR" ]; then
-            CANDIDATES+=("$BRANCH/$SUBDIR_ENC/pom.xml")
-            CANDIDATES+=("$BRANCH/pom.xml")
-          else
-            CANDIDATES+=("$BRANCH/pom.xml")
-          fi
-          # Also try common default branches at root as last resort
-          for fb in main master develop; do
-            [ "$fb" != "$BRANCH" ] && CANDIDATES+=("$fb/pom.xml")
-          done
+          # Try manifests in language-detection priority order (matches run_pipeline.py)
+          MANIFESTS=("pom.xml" "requirements.txt" "pyproject.toml" "package.json" "Gemfile" "go.mod")
 
           FOUND=0
-          for PATH_SUFFIX in "${CANDIDATES[@]}"; do
-            URL="https://raw.githubusercontent.com/$OWNER/$REPO/$PATH_SUFFIX"
-            HTTP=$(curl -sL -w "%{http_code}" -o pipeline-output/pom.xml "$URL")
-            if [ "$HTTP" = "200" ] && [ -s pipeline-output/pom.xml ]; then
-              echo "Fetched pom.xml from $PATH_SUFFIX ($(wc -c < pipeline-output/pom.xml) bytes)"
-              FOUND=1; break
+          for MANIFEST in "${MANIFESTS[@]}"; do
+            CANDIDATES=()
+            if [ -n "$SUBDIR" ]; then
+              CANDIDATES+=("$BRANCH/$SUBDIR_ENC/$MANIFEST" "$BRANCH/$MANIFEST")
+            else
+              CANDIDATES+=("$BRANCH/$MANIFEST")
             fi
+            # Fallback to common default branches at root
+            for fb in main master develop; do
+              [ "$fb" != "$BRANCH" ] && CANDIDATES+=("$fb/$MANIFEST")
+            done
+
+            for PATH_SUFFIX in "${CANDIDATES[@]}"; do
+              URL="https://raw.githubusercontent.com/$OWNER/$REPO/$PATH_SUFFIX"
+              HTTP=$(curl -sL -w "%{http_code}" -o "pipeline-output/$MANIFEST" "$URL")
+              if [ "$HTTP" = "200" ] && [ -s "pipeline-output/$MANIFEST" ]; then
+                echo "Fetched $MANIFEST from $PATH_SUFFIX ($(wc -c < "pipeline-output/$MANIFEST") bytes)"
+                FOUND=1; break 2
+              fi
+              rm -f "pipeline-output/$MANIFEST"
+            done
           done
 
           if [ "$FOUND" = "0" ]; then
-            echo "ERROR: Could not fetch pom.xml from any candidate path in $OWNER/$REPO"
-            echo "Tried: ${CANDIDATES[*]}"
+            echo "ERROR: Could not fetch any manifest (pom.xml, requirements.txt, pyproject.toml, package.json, Gemfile, go.mod) from $OWNER/$REPO"
             exit 1
           fi
 
