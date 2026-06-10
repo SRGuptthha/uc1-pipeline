@@ -19,7 +19,8 @@ OUT_DIR  = HERE  # pipeline writes output files here
 mcp = FastMCP("supply-chain-security")
 
 
-def _run_pipeline(repo_url: str, token: str | None = None, scan_only: bool = True) -> dict:
+def _run_pipeline(repo_url: str, token: str | None = None, scan_only: bool = True,
+                  timeout: int = 300) -> dict:
     """Run run_pipeline.py as a subprocess and return parsed audit-trail.json."""
     cmd = [sys.executable, str(PIPELINE), repo_url, "--out-dir", str(OUT_DIR)]
     if token:
@@ -30,12 +31,22 @@ def _run_pipeline(repo_url: str, token: str | None = None, scan_only: bool = Tru
     env = os.environ.copy()
     env.pop("_UC1_IMPORT_ONLY", None)
 
-    result = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=300)
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, env=env,
+                                timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return {"error": f"Pipeline timed out after {timeout}s. "
+                         "Try a smaller repo or increase the timeout."}
+    except Exception as exc:
+        return {"error": f"Failed to launch pipeline: {exc}"}
 
     audit_path = OUT_DIR / "audit-trail.json"
     if audit_path.exists():
-        with open(audit_path, encoding="utf-8") as f:
-            return json.load(f)
+        try:
+            with open(audit_path, encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as exc:
+            return {"error": f"Could not parse audit-trail.json: {exc}"}
 
     return {
         "error": "Pipeline did not produce audit-trail.json",
@@ -54,7 +65,7 @@ def _read_json(filename: str) -> dict:
 
 
 @mcp.tool()
-def scan_repo(repo_url: str, token: str = "") -> str:
+def scan_repo(repo_url: str, token: str = "", timeout: int = 300) -> str:
     """
     Scan a GitHub repository for CVEs, generate health report and policy status.
     Dry-run (no PRs created). Returns health grade, CVE summary and key findings.
@@ -62,8 +73,9 @@ def scan_repo(repo_url: str, token: str = "") -> str:
     Args:
         repo_url: Full GitHub URL, e.g. https://github.com/owner/repo
         token:    Optional GitHub PAT (improves rate limits; not required for public repos)
+        timeout:  Max seconds to wait for the pipeline (default 300)
     """
-    data = _run_pipeline(repo_url, token or None, scan_only=True)
+    data = _run_pipeline(repo_url, token or None, scan_only=True, timeout=timeout)
     if "error" in data:
         return f"Pipeline error: {data['error']}\n\nStdout:\n{data.get('stdout','')}"
 

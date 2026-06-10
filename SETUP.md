@@ -364,16 +364,102 @@ The workflow also runs automatically every Monday at 02:00 UTC and on every push
 
 ---
 
-## MCP Server (Claude Code — already configured)
+## Use as an AI Agent (MCP)
 
-The file `.mcp.json` at the project root pre-configures the `supply-chain-security`
-MCP server. When you open this project in Claude Code the server starts automatically.
+The pipeline is packaged as an **MCP (Model Context Protocol) server** — the universal
+standard for AI tool integration. Once running, any MCP-compatible AI (Claude, Cursor,
+VS Code Copilot, and others) can scan any repo with a single call:
 
-You can verify the connection by asking Claude:
-
-```text
-get_health_report
+```
+AI: scan_repo("https://github.com/my-org/my-service")
+→  Health: B (82/100) | CVEs: 3 critical, 7 high | Policy: WARN
 ```
 
-Five tools are available: `scan_repo`, `get_health_report`, `get_cve_summary`,
-`get_policy_status`, `create_remediation_prs`. No extra setup is needed.
+### One-time install (MCP server only)
+
+```powershell
+pip install -r pipeline-output/mcp-requirements.txt
+# installs: mcp[cli]>=1.0
+```
+
+### The 8 available tools
+
+| Tool | Required input | What it does |
+| ---- | ------------- | ----------- |
+| `scan_repo(repo_url)` | GitHub URL | Full dry-run scan — health grade + CVE summary |
+| `create_remediation_prs(repo_url, token)` | GitHub URL + PAT | Live scan + opens upgrade PR |
+| `get_health_report()` | — | Score/grade from last run |
+| `get_cve_summary()` | — | CVE list sorted by CVSS from last run |
+| `get_policy_status()` | — | P001–P009 results from last run |
+| `get_sbom()` | — | CycloneDX component list from last run |
+| `get_drift_report()` | — | Dependency changes vs baseline from last run |
+| `update_policy(field, value)` | field + value | Update a policy.json threshold |
+
+### Connect from Claude Code (already wired up)
+
+`.mcp.json` at the repo root pre-configures the server. Open this project in
+Claude Code and the server starts automatically. Verify:
+
+```text
+scan_repo("https://github.com/SRGuptthha/uc1-security-demo")
+```
+
+### Connect from Claude Desktop
+
+Add to `~/AppData/Roaming/Claude/claude_desktop_config.json` (Windows) or
+`~/Library/Application Support/Claude/claude_desktop_config.json` (Mac):
+
+```json
+{
+  "mcpServers": {
+    "supply-chain-security": {
+      "command": "python",
+      "args": ["C:/path/to/uc1-pipeline/pipeline-output/mcp_server.py"]
+    }
+  }
+}
+```
+
+Replace `C:/path/to/uc1-pipeline` with your actual clone path. Restart Claude Desktop.
+
+### Connect from Cursor
+
+Add to `.cursor/mcp.json` in your workspace:
+
+```json
+{
+  "mcpServers": {
+    "supply-chain-security": {
+      "command": "python",
+      "args": ["C:/path/to/uc1-pipeline/pipeline-output/mcp_server.py"]
+    }
+  }
+}
+```
+
+### Connect from any Anthropic SDK agent
+
+```python
+import anthropic
+
+client = anthropic.Anthropic()
+
+# The MCP server must be running: python pipeline-output/mcp_server.py
+result = client.beta.messages.create(
+    model="claude-opus-4-8",
+    max_tokens=1024,
+    tools=[{"type": "mcp", "server_label": "supply-chain-security"}],
+    messages=[{
+        "role": "user",
+        "content": "Scan https://github.com/my-org/my-service for vulnerabilities"
+    }]
+)
+```
+
+### Verify the server starts correctly
+
+```powershell
+python pipeline-output/mcp_server.py
+# Should print: Starting MCP server supply-chain-security ...
+# Press Ctrl+C to stop
+```

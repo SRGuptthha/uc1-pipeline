@@ -2,7 +2,7 @@
   "mcpServers": {
     "supply-chain-security": {
       "command": "python",
-      "args": ["d:/ClaudeUC/UC1/pipeline-output/mcp_server.py"]
+      "args": ["pipeline-output/mcp_server.py"]
     }
   }
 }
