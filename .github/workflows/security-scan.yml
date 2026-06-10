@@ -48,6 +48,13 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Install Grype and Syft (no Docker required)
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh  | sh -s -- -b /usr/local/bin
+          echo "Grype: $(grype version --output text 2>&1 | head -1)"
+          echo "Syft : $(syft version --output text  2>&1 | head -1)"
+
       - name: Determine scan target
         id: target
         run: |
@@ -186,6 +193,34 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           GITHUB_REPOSITORY: ${{ github.repository }}
 
+      - name: Generate Syft SBOM
+        if: always()
+        run: |
+          syft dir:pipeline-output \
+            --output cyclonedx-json \
+            --file pipeline-output/sbom-syft.json \
+            --quiet || true
+          echo "Syft SBOM: $(wc -c < pipeline-output/sbom-syft.json 2>/dev/null || echo 'not generated') bytes"
+
+      - name: Run Grype audit on SBOM
+        if: always()
+        run: |
+          grype sbom:pipeline-output/sbom-syft.json \
+            --output json \
+            --file pipeline-output/grype-report.json \
+            --quiet || true
+          python3 << 'PYEOF'
+          import json
+          try:
+              r = json.load(open('pipeline-output/grype-report.json'))
+              ms = r.get('matches', [])
+              crit = sum(1 for m in ms if m['vulnerability']['severity'] == 'Critical')
+              high = sum(1 for m in ms if m['vulnerability']['severity'] == 'High')
+              print(f"Grype found {len(ms)} vulnerabilities — Critical: {crit}, High: {high}")
+          except Exception as e:
+              print(f"Grype report not available: {e}")
+          PYEOF
+
       - name: Upload security artifacts
         uses: actions/upload-artifact@v4
         if: always()
@@ -195,6 +230,8 @@ jobs:
             pipeline-output/dependency-health-report.html
             pipeline-output/audit-trail.json
             pipeline-output/sbom-cyclonedx.json
+            pipeline-output/sbom-syft.json
+            pipeline-output/grype-report.json
             pipeline-output/dependency-check-report.json
             pipeline-output/policy-report.json
             pipeline-output/secret-scan-report.json
