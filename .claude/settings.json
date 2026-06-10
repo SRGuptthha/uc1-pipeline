@@ -4,5 +4,27 @@
       "PowerShell(Test-Path \"d:\\\\ClaudeUC\\\\UC1\\\\pipeline-output\\\\dependency-health-report.html\"; if \\(Test-Path \"d:\\\\ClaudeUC\\\\UC1\\\\pipeline-output\\\\dependency-health-report.html\"\\) { \\(Get-Item \"d:\\\\ClaudeUC\\\\UC1\\\\pipeline-output\\\\dependency-health-report.html\"\\).Length })",
       "PowerShell(cd d:\\\\ClaudeUC\\\\UC1; $env:PYTHONIOENCODING = \"utf-8\"; python pipeline-output/run_pipeline.py https://github.com/scrapy/scrapy 2>&1)"
     ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "mcp__supply-chain-security__scan_repo",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python pipeline-output/preflight.py"
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__supply-chain-security__create_remediation_prs",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python pipeline-output/preflight.py"
+          }
+        ]
+      }
+    ]
   }
 }
