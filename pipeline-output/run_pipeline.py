@@ -1226,6 +1226,83 @@ print(f"  Written: sbom-cyclonedx.json  ({os.path.getsize(sbom_cdx_path)//1024 o
 
 
 # ─────────────────────────────────────────────────────────────
+# STAGE 1.6 — Syft SBOM + Grype SBOM Audit (no container needed)
+# ─────────────────────────────────────────────────────────────
+_syft_avail       = bool(_shutil_mod.which("syft"))
+_grype_avail_sbom = bool(_shutil_mod.which("grype"))
+sbom_syft_path    = os.path.join(OUT, "sbom-syft.json")
+grype_report_path = os.path.join(OUT, "grype-report.json")
+_syft_ok          = False
+grype_stage_result = {"status": "SKIPPED", "reason": "grype not installed"}
+
+print(f"\n[Stage 1.6] Syft SBOM + Grype audit...")
+
+# ── Syft: richer SBOM from manifest directory (dir: scan, no Docker) ──
+if _syft_avail:
+    try:
+        _subprocess.run(
+            ["syft", f"dir:{OUT}", "--output", "cyclonedx-json",
+             "--file", sbom_syft_path, "--quiet"],
+            capture_output=True, text=True, timeout=120, check=False
+        )
+        if os.path.exists(sbom_syft_path) and os.path.getsize(sbom_syft_path) > 0:
+            _syft_ok = True
+            print(f"  Syft SBOM    : {os.path.getsize(sbom_syft_path)//1024 or '<1'} KB"
+                  f"  (cyclonedx-json, dir: scan)")
+            print(f"  Written: sbom-syft.json")
+        else:
+            print(f"  Syft SBOM    : produced no output — falling back to built-in CycloneDX")
+    except _subprocess.TimeoutExpired:
+        print(f"  Syft SBOM    : timed out — falling back to built-in CycloneDX")
+    except Exception as _syft_exc:
+        print(f"  Syft SBOM    : {_syft_exc} — falling back to built-in CycloneDX")
+else:
+    print(f"  Syft         : not installed — using built-in CycloneDX SBOM"
+          f"  (install: curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh)")
+
+# ── Grype: audit the best available SBOM (sbom: mode, no Docker) ──
+_grype_input = sbom_syft_path if _syft_ok else sbom_cdx_path
+if _grype_avail_sbom:
+    try:
+        _subprocess.run(
+            ["grype", f"sbom:{_grype_input}", "--output", "json",
+             "--file", grype_report_path, "--quiet"],
+            capture_output=True, text=True, timeout=180, check=False
+        )
+        if os.path.exists(grype_report_path) and os.path.getsize(grype_report_path) > 0:
+            with open(grype_report_path, encoding="utf-8") as _gf:
+                _gd = json.load(_gf)
+            _ms   = _gd.get("matches", [])
+            _crit = sum(1 for m in _ms if m["vulnerability"]["severity"] == "Critical")
+            _high = sum(1 for m in _ms if m["vulnerability"]["severity"] == "High")
+            _med  = sum(1 for m in _ms if m["vulnerability"]["severity"] == "Medium")
+            grype_stage_result = {
+                "status":      "PASS" if (_crit == 0 and _high == 0) else "FAIL",
+                "total":       len(_ms),
+                "critical":    _crit,
+                "high":        _high,
+                "medium":      _med,
+                "sbom_source": os.path.basename(_grype_input),
+                "artifact":    "grype-report.json",
+            }
+            print(f"  Grype audit  : {len(_ms)} vulns  "
+                  f"(Critical: {_crit}  High: {_high}  Medium: {_med})")
+            print(f"  Written: grype-report.json")
+        else:
+            grype_stage_result = {"status": "ERROR", "reason": "grype produced no output"}
+            print(f"  Grype audit  : produced no output")
+    except _subprocess.TimeoutExpired:
+        grype_stage_result = {"status": "ERROR", "reason": "grype timed out (>180s)"}
+        print(f"  Grype audit  : timed out")
+    except Exception as _grype_exc:
+        grype_stage_result = {"status": "ERROR", "reason": str(_grype_exc)}
+        print(f"  Grype audit  : {_grype_exc}")
+else:
+    print(f"  Grype        : not installed — SBOM audit skipped"
+          f"  (install: curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh)")
+
+
+# ─────────────────────────────────────────────────────────────
 # Stage 2 — Risk Scoring
 # ─────────────────────────────────────────────────────────────
 print(f"\n[Stage 2] Running Risk Scoring Agent...")
@@ -2246,6 +2323,7 @@ _t0_day6 = _time.time()
 _PIPELINE_STAGES = [
     ("stage1",   "dependency-check-report.json",  "CVE scan"),
     ("stage1_5", "sbom-cyclonedx.json",            "SBOM generation"),
+    ("stage1_6", "grype-report.json",              "Grype SBOM audit"),
     ("stage2",   "risk-scores.json",               "Risk scoring"),
     ("stage3",   "audit-report.json",              "Supply-chain audit"),
     ("stage3_5", "secret-scan-report.json",        "Secret detection"),
@@ -2687,9 +2765,12 @@ audit_trail = {
                             "avg_coverage_pct": avg_cov,
                             "artifact": "validation-report.json"},
     "stage6_e2e":          e2e_summary,
+    "stage1_6_grype":      grype_stage_result,
     "report_outputs": {
         "html":                    "dependency-health-report.html",
         "sbom_cyclonedx":          "sbom-cyclonedx.json",
+        "sbom_syft":               "sbom-syft.json" if _syft_ok else None,
+        "grype_report":            "grype-report.json" if grype_stage_result.get("status") not in ("SKIPPED", "ERROR") else None,
         "secret_scan":             "secret-scan-report.json",
         "policy_report":           "policy-report.json",
         "drift_report":            "drift-report.json",
@@ -2821,6 +2902,7 @@ print(f"\n  Repo   : {owner}/{repo}  ({github_url})")
 print(f"  Health : {score_before}/100 -> {score_after}/100   Grade {grade} — {label}")
 print(f"\n  Output files:")
 for fname in ["pom.xml", "dependency-check-report.json", "sbom-cyclonedx.json",
+              "sbom-syft.json", "grype-report.json",
               "risk-scores.json", "audit-report.json",
               "secret-scan-report.json", "policy-report.json",
               "drift-report.json", "dependency-baseline.json",
