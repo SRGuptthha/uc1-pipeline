@@ -24,7 +24,7 @@ on:
       manifest_subdir:
         description: 'Subdirectory containing pom.xml / manifest (leave blank for repo root)'
         required: false
-        default: 'Java files'
+        default: 'python_files'
       create_prs:
         description: 'Create remediation PRs? (requires DEMO_REPO_PAT secret)'
         required: false
