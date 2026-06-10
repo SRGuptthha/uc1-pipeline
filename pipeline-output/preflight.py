@@ -256,7 +256,7 @@ if IS_WIN and ((_grype_ok and not shutil.which("grype"))
     print(f"\n  NOTE (Windows): tools installed to {WIN_BIN}")
     print(f"  Add this folder to your PATH to use them from any directory:")
     print(f"    $env:PATH += \";{WIN_BIN}\"   (current session)")
-    print(f"  Or add permanently via System Properties → Environment Variables.")
+    print(f"  Or add permanently via System Properties > Environment Variables.")
 
 if not IS_WIN and str(UNIX_BIN) not in os.environ.get("PATH", ""):
     print(f"\n  NOTE: tools installed to {UNIX_BIN}")
