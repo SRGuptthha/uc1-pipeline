@@ -1228,6 +1228,12 @@ print(f"  Written: sbom-cyclonedx.json  ({os.path.getsize(sbom_cdx_path)//1024 o
 # ─────────────────────────────────────────────────────────────
 # STAGE 1.6 — Syft SBOM + Grype SBOM Audit (no container needed)
 # ─────────────────────────────────────────────────────────────
+# Auto-add pipeline-output/bin to PATH so preflight-installed binaries are found
+# without requiring the user to update system PATH manually.
+_local_bin = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bin")
+if os.path.isdir(_local_bin) and _local_bin not in os.environ.get("PATH", ""):
+    os.environ["PATH"] = _local_bin + os.pathsep + os.environ.get("PATH", "")
+
 _syft_avail       = bool(_shutil_mod.which("syft"))
 _grype_avail_sbom = bool(_shutil_mod.which("grype"))
 sbom_syft_path    = os.path.join(OUT, "sbom-syft.json")

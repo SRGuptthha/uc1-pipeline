@@ -12,6 +12,9 @@ build/
 venv/
 
 # ── Pipeline generated outputs (recreated on every run) ───────────────────────
+pipeline-output/sbom-syft.json
+pipeline-output/grype-report.json
+pipeline-output/bin/
 pipeline-output/dependency-check-report.json
 pipeline-output/sbom-cyclonedx.json
 pipeline-output/risk-scores.json
