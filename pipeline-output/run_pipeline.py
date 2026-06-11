@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
 UC1 Supply Chain Security Pipeline
 Usage: python run_pipeline.py <github-url> [--token GITHUB_PAT]
@@ -10,7 +10,7 @@ Example: python run_pipeline.py https://github.com/WebGoat/WebGoat --token ghp_x
 import sys, os, json, re, base64, urllib.request, urllib.error, ssl
 import xml.etree.ElementTree as ET
 import time as _time, subprocess as _subprocess, shutil as _shutil_mod, tempfile as _tempfile
-import datetime as _dt
+import datetime as _dt, threading as _threading
 from collections import Counter
 
 # Create unverified SSL context for environments with missing CA bundles
@@ -23,16 +23,24 @@ _SSL_CTX.verify_mode    = ssl.CERT_NONE
 # ─────────────────────────────────────────────────────────────
 if len(sys.argv) < 2:
     print("Usage: python run_pipeline.py <github-url> [--token GITHUB_PAT] [--scan-only]")
+    print("                              [--offline] [--timeout SECS] [--stage LABEL]")
     print("Example: python run_pipeline.py https://github.com/WebGoat/WebGoat --token ghp_xxxx")
-    print("         --scan-only  use token for reading only; skip PR creation (for CI)")
+    print("         --scan-only    use token for reading only; skip PR creation (for CI)")
+    print("         --offline      skip OSV.dev and registry API calls (manifest still fetched)")
+    print("         --timeout N    exit with code 5 if pipeline exceeds N seconds (default 600)")
+    print("         --stage LABEL  stop cleanly after stage LABEL (e.g. 1, 2, 3, 3.7, 4, 5)")
     sys.exit(1)
 
-github_url    = sys.argv[1].rstrip("/")
-github_token  = None
-out_dir_arg   = None
-e2e_repos     = []
-scan_only     = False
-args          = sys.argv[2:]
+github_url        = sys.argv[1].rstrip("/")
+github_token      = None
+out_dir_arg       = None
+e2e_repos         = []
+scan_only         = False
+offline_mode      = False
+pipeline_timeout  = 600
+run_only_stage    = None
+_timeout_timer    = None   # created after _UC1_IMPORT_ONLY guard
+args              = sys.argv[2:]
 i = 0
 while i < len(args):
     a = args[i]
@@ -44,6 +52,16 @@ while i < len(args):
         e2e_repos = [u.strip() for u in args[i + 1].split(",") if u.strip()]; i += 2
     elif a == "--scan-only":
         scan_only = True; i += 1
+    elif a == "--offline":
+        offline_mode = True; i += 1
+    elif a == "--timeout" and i + 1 < len(args):
+        try:
+            pipeline_timeout = int(args[i + 1])
+        except ValueError:
+            pass
+        i += 2
+    elif a == "--stage" and i + 1 < len(args):
+        run_only_stage = args[i + 1]; i += 2
     else:
         i += 1
 
@@ -54,7 +72,10 @@ if len(parts) < 2:
 
 owner      = parts[0]
 repo       = parts[1].replace(".git", "")
-project    = repo
+# When URL includes /tree/<branch>/<subdir> use the subdir as the project name
+# e.g. https://github.com/org/repo/tree/DEV/vulnerable-inventory-rb → "vulnerable-inventory-rb"
+_url_subdir = parts[4] if len(parts) >= 5 and parts[2] == "tree" else None
+project    = _url_subdir if _url_subdir else repo
 OUT        = out_dir_arg if out_dir_arg else os.path.dirname(os.path.abspath(__file__))
 if out_dir_arg:
     os.makedirs(OUT, exist_ok=True)
@@ -65,7 +86,7 @@ print("=" * 62)
 print(f"  UC1 Supply Chain Security Pipeline")
 print(f"  Repo : {owner}/{repo}")
 print(f"  URL  : {github_url}")
-print(f"  Mode : {'LIVE (real PRs)' if github_token else 'DRY-RUN (no GitHub token)'}")
+print(f"  Mode : {'OFFLINE (no OSV/registry)' if offline_mode else 'LIVE (real PRs)' if github_token else 'DRY-RUN (no GitHub token)'}")
 print("=" * 62)
 
 
@@ -87,6 +108,19 @@ def http_post_json(url, payload, timeout=30):
     })
     with urllib.request.urlopen(req, timeout=timeout, context=_SSL_CTX) as r:
         return json.loads(r.read())
+
+
+def _http_retry(fn, *args, retries=3, **kwargs):
+    """Call fn(*args, **kwargs) with exponential backoff retries on transient errors."""
+    for attempt in range(retries):
+        try:
+            return fn(*args, **kwargs)
+        except Exception as e:
+            if attempt == retries - 1:
+                raise
+            wait = 2 ** attempt
+            print(f"  [retry {attempt + 1}/{retries - 1}] {type(e).__name__} — retrying in {wait}s...")
+            _time.sleep(wait)
 
 
 def github_api(method, path, token, payload=None):
@@ -128,6 +162,8 @@ def lookup_latest_version(group_id, artifact_id):
 
 def lookup_latest_version_ecosystem(dep):
     """Lookup latest stable version for any ecosystem."""
+    if offline_mode:
+        return None
     eco  = dep.get("ecosystem", "Maven")
     name = dep["artifact"]
     if eco == "Maven":
@@ -171,6 +207,8 @@ def lookup_latest_version_ecosystem(dep):
 
 def lookup_license_for_dep(dep):
     """Fetch real license string from the package registry. Returns str or 'UNKNOWN'."""
+    if offline_mode:
+        return "UNKNOWN"
     eco  = dep.get("ecosystem", "Maven")
     name = dep["artifact"]
     try:
@@ -340,10 +378,18 @@ def create_consolidated_pr(token, owner, repo, upgrades, patched_manifest,
     if bstatus not in (200, 201):
         return {"skipped": True, "reason": f"Branch creation failed ({bstatus})"}
 
+    def _rollback_branch():
+        try:
+            github_api("DELETE", f"/repos/{owner}/{repo}/git/refs/heads/{branch}", token)
+            print(f"  [rollback] Deleted dangling branch {branch}")
+        except Exception:
+            pass
+
     # ── C: get manifest blob SHA from the new branch ──────────────
     file_data, fstatus = github_api("GET",
         f"/repos/{owner}/{repo}/contents/{manifest_filename}?ref={branch}", token)
     if fstatus != 200:
+        _rollback_branch()
         return {"skipped": True, "reason": f"Could not read {manifest_filename} from branch"}
     file_sha = file_data["sha"]  # type: ignore[index]
 
@@ -358,6 +404,7 @@ def create_consolidated_pr(token, owner, repo, upgrades, patched_manifest,
         "branch":  branch,
     })
     if cstatus not in (200, 201):
+        _rollback_branch()
         return {"skipped": True, "reason": f"File commit failed ({cstatus})"}
 
     # ── E: build rich PR body ─────────────────────────────────────
@@ -422,6 +469,7 @@ def create_consolidated_pr(token, owner, repo, upgrades, patched_manifest,
         "base":  default_branch,
     })
     if prstatus not in (200, 201):
+        _rollback_branch()
         err = pr_data.get("detail", "") if isinstance(pr_data, dict) else str(pr_data)
         return {"skipped": True, "reason": f"PR creation failed ({prstatus}): {err[:200]}"}
 
@@ -991,9 +1039,145 @@ def _check_typosquatting(dep_name, ecosystem):
     return None
 
 
+def _write_sarif(stage1_deps, project_name, scan_date, out_path):
+    """Write SARIF 2.1.0 report — renders in GitHub Security tab with zero extra config."""
+    rules, results, seen_rules = [], [], set()
+    for dep in stage1_deps:
+        pkg = dep["packages"][0]["id"] if dep.get("packages") else dep.get("filePath", "?")
+        for vuln in dep.get("vulnerabilities", []):
+            vid  = vuln.get("name", "UNKNOWN")
+            cvss = (vuln.get("cvssv3") or {}).get("baseScore", 0)
+            sev  = vuln.get("severity", "LOW")
+            desc = (vuln.get("description") or "")[:500]
+            if vid not in seen_rules:
+                seen_rules.add(vid)
+                rules.append({
+                    "id": vid,
+                    "name": vid.replace("-", ""),
+                    "shortDescription": {"text": f"{vid}: {sev} severity vulnerability"},
+                    "fullDescription":  {"text": desc or f"Vulnerability {vid} in dependency."},
+                    "properties":       {"security-severity": str(cvss), "tags": ["security", "supply-chain"]},
+                    "helpUri":          f"https://osv.dev/vulnerability/{vid}",
+                })
+            results.append({
+                "ruleId": vid,
+                "level": "error" if cvss >= 7.0 else "warning",
+                "message": {"text": f"{vid} ({sev}, CVSS {cvss}) in {pkg}"},
+                "locations": [{"physicalLocation": {
+                    "artifactLocation": {
+                        "uri":       dep.get("filePath", "pom.xml").lstrip("/"),
+                        "uriBaseId": "%SRCROOT%",
+                    },
+                    "region": {"startLine": 1},
+                }}],
+            })
+    sarif = {
+        "version": "2.1.0",
+        "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+        "runs": [{
+            "tool": {"driver": {
+                "name":            "UC1 Supply Chain Security",
+                "version":         "1.0.0",
+                "informationUri":  "https://github.com/SRGuptthha/uc1-security-demo",
+                "rules":           rules,
+            }},
+            "results":     results,
+            "invocations": [{"executionSuccessful": True, "commandLine": "run_pipeline.py"}],
+        }]
+    }
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(sarif, f, indent=2)
+    print(f"  Written: {os.path.basename(out_path)}  ({len(results)} findings — GitHub Security tab compatible)")
+
+
+def _maybe_stop_after(stage_label):
+    """Exit cleanly with code 0 when --stage LABEL matches this stage."""
+    if run_only_stage and run_only_stage == stage_label:
+        print(f"\n[--stage] Stopping cleanly after stage {stage_label} as requested.")
+        if _timeout_timer is not None:
+            _timeout_timer.cancel()
+        sys.exit(0)
+
+
+def _publish_html_report(token, owner, repo, base_branch, html_path, project_name, scan_date):
+    """
+    Push dependency-health-report.html to a new branch in the scanned repo.
+    Branch name: Supply_Chain_Security_<project>_<YYYYMMDD_HHMMSS>
+    Only called when a GitHub token is available.
+    Returns {"branch": ..., "url": ...} on success, None on failure.
+    """
+    safe_name = re.sub(r"[^A-Za-z0-9._-]", "_", project_name)
+    # scan_date is ISO-8601 like "2026-06-11T08:44:16Z" → "20260611_084416"
+    ts        = re.sub(r"[^0-9]", "", scan_date[:19])        # "20260611084416"
+    ts        = ts[:8] + "_" + ts[8:]                        # "20260611_084416"
+    branch    = f"Supply_Chain_Security_{safe_name}_{ts}"
+
+    print(f"\n[Stage 7] Publishing HTML report → branch '{branch}' ...")
+
+    # A: get base branch SHA
+    ref_data, status = github_api("GET", f"/repos/{owner}/{repo}/git/ref/heads/{base_branch}", token)
+    if status != 200:
+        print(f"  [publish] Cannot read base branch '{base_branch}' (HTTP {status}) — skipping upload")
+        return None
+    try:
+        base_sha = ref_data["object"]["sha"]  # type: ignore[index]
+    except (KeyError, TypeError):
+        print("  [publish] Cannot parse branch SHA — skipping upload")
+        return None
+
+    # B: create the new branch
+    _, bstatus = github_api("POST", f"/repos/{owner}/{repo}/git/refs", token,
+                            {"ref": f"refs/heads/{branch}", "sha": base_sha})
+    if bstatus not in (200, 201):
+        print(f"  [publish] Branch creation failed (HTTP {bstatus}) — skipping upload")
+        return None
+
+    # C: base64-encode the HTML file
+    with open(html_path, "rb") as _f:
+        encoded = base64.b64encode(_f.read()).decode("ascii")
+
+    # D: check if the file already exists on the branch (idempotent update)
+    file_sha = None
+    existing, fstatus = github_api(
+        "GET", f"/repos/{owner}/{repo}/contents/dependency-health-report.html?ref={branch}", token)
+    if fstatus == 200 and isinstance(existing, dict):
+        file_sha = existing.get("sha")
+
+    payload: dict = {
+        "message": (f"ci(security): dependency health report — {project_name} "
+                    f"[{scan_date[:10]}]"),
+        "content": encoded,
+        "branch":  branch,
+    }
+    if file_sha:
+        payload["sha"] = file_sha
+
+    # E: commit the file
+    _, cstatus = github_api(
+        "PUT", f"/repos/{owner}/{repo}/contents/dependency-health-report.html", token, payload)
+    if cstatus not in (200, 201):
+        print(f"  [publish] File commit failed (HTTP {cstatus}) — rolling back branch")
+        github_api("DELETE", f"/repos/{owner}/{repo}/git/refs/heads/{branch}", token)
+        return None
+
+    html_url = (f"https://github.com/{owner}/{repo}/blob/{branch}"
+                f"/dependency-health-report.html")
+    print(f"  Published: {html_url}")
+    return {"branch": branch, "url": html_url}
+
+
 # ── Import-only guard — lets test_pipeline.py import helpers without running the pipeline ──
 if os.environ.get("_UC1_IMPORT_ONLY"):
     sys.exit(0)
+
+# ── Global pipeline timeout — fires _timeout_exit after pipeline_timeout seconds ──
+def _timeout_exit():
+    print(f"\n[TIMEOUT] Pipeline exceeded {pipeline_timeout}s limit. Exiting with code 5.")
+    os._exit(5)
+
+_timeout_timer = _threading.Timer(pipeline_timeout, _timeout_exit)
+_timeout_timer.daemon = True
+_timeout_timer.start()
 
 # ─────────────────────────────────────────────────────────────
 # STEP 1 — Detect project language & fetch manifest
@@ -1007,7 +1191,8 @@ if not manifest_content or not MANIFEST_FILENAME:
     print("  ERROR: No supported manifest file found.")
     print("  Supported: pom.xml, requirements.txt, pyproject.toml, Pipfile,")
     print("             package.json, *.csproj, Gemfile, go.mod")
-    sys.exit(1)
+    # Exit codes: 0=clean, 2=policy fail, 3=scan error, 4=no manifest, 5=timeout
+    sys.exit(4)
 
 assert MANIFEST_FILENAME is not None  # narrowing for type checker
 print(f"  Language   : {LANGUAGE} ({ECOSYSTEM})")
@@ -1062,7 +1247,7 @@ if props:
 # STEP 3 — CVE Lookup via OSV.dev (Google, free, no auth)
 # ─────────────────────────────────────────────────────────────
 print(f"\n[Stage 1] Querying OSV.dev for known CVEs...")
-_t0_day1 = _time.time()
+_t0_stage1 = _time.time()
 print(f"  Checking {len(compile_deps)} dependencies (compile/runtime only)...")
 
 OSV_BATCH_URL  = "https://api.osv.dev/v1/querybatch"
@@ -1070,15 +1255,18 @@ OSV_DETAIL_URL = "https://api.osv.dev/v1/vulns/{}"
 
 def query_osv(deps):
     """Step 1: batch query for IDs. Step 2: fetch full details per unique vuln."""
+    if offline_mode:
+        print("  [offline] Skipping OSV.dev queries.")
+        return {d["purl"]: [] for d in deps}
     queries = [
         {"version": d["version"], "package": _osv_package_spec(d)}
         for d in deps
     ]
     try:
-        batch_resp = http_post_json(OSV_BATCH_URL, {"queries": queries}, timeout=60)
+        batch_resp = _http_retry(http_post_json, OSV_BATCH_URL, {"queries": queries}, timeout=60)
         results    = batch_resp.get("results", [])
     except Exception as e:
-        print(f"  Warning: OSV.dev batch query failed: {e}")
+        print(f"  Warning: OSV.dev batch query failed after retries: {e}")
         return {d["purl"]: [] for d in deps}
 
     # Map dep → list of vuln IDs
@@ -1099,7 +1287,7 @@ def query_osv(deps):
     vuln_details = {}
     for i, vid in enumerate(unique_ids, 1):
         try:
-            raw = http_get(OSV_DETAIL_URL.format(vid), timeout=15)
+            raw = _http_retry(http_get, OSV_DETAIL_URL.format(vid), timeout=15)
             vuln_details[vid] = json.loads(raw)
         except Exception as e:
             vuln_details[vid] = {"id": vid, "_error": str(e)}
@@ -1139,13 +1327,13 @@ print(f"  OSS Index returned {total_vulns} vulnerability records")
 # ─────────────────────────────────────────────────────────────
 # Build Stage 1 artifact — OWASP-compatible JSON
 # ─────────────────────────────────────────────────────────────
-day1_deps = []
+stage1_deps = []
 for dep in compile_deps:
     purl  = dep["purl"]
     # query_osv already returns fully structured vuln dicts — use them directly
     vuln_list = vuln_map.get(purl, [])
 
-    day1_deps.append({
+    stage1_deps.append({
         "fileName":        f"{dep['artifact']}-{dep['version']}.jar",
         "filePath":        f"/app/lib/{dep['artifact']}-{dep['version']}.jar",
         "isVirtual":       False,
@@ -1153,21 +1341,24 @@ for dep in compile_deps:
         "vulnerabilities": vuln_list,
     })
 
-day1 = {
+stage1 = {
     "reportSchema": "1.1",
     "projectInfo": {
         "name":       project,
         "reportDate": SCAN_DATE,
         "credits":    {"OSSIndex": "https://ossindex.sonatype.org"},
     },
-    "dependencies": day1_deps,
+    "dependencies": stage1_deps,
 }
 
-day1_path = os.path.join(OUT, "dependency-check-report.json")
-with open(day1_path, "w", encoding="utf-8") as f:
-    json.dump(day1, f, indent=2)
+stage1_path = os.path.join(OUT, "dependency-check-report.json")
+with open(stage1_path, "w", encoding="utf-8") as f:
+    json.dump(stage1, f, indent=2)
 
-all_cves = [v for dep in day1_deps for v in dep["vulnerabilities"]]
+sarif_path = os.path.join(OUT, "sarif-report.sarif")
+_write_sarif(stage1_deps, project, SCAN_DATE, sarif_path)
+
+all_cves = [v for dep in stage1_deps for v in dep["vulnerabilities"]]
 sev_counts = Counter(v["severity"] for v in all_cves)
 print(f"\n  Scan summary:")
 print(f"    Dependencies scanned : {len(compile_deps)}")
@@ -1177,7 +1368,8 @@ print(f"    HIGH                 : {sev_counts.get('HIGH', 0)}")
 print(f"    MEDIUM               : {sev_counts.get('MEDIUM', 0)}")
 print(f"    LOW                  : {sev_counts.get('LOW', 0)}")
 print(f"  Written: dependency-check-report.json")
-_stage_times["day1"] = round(_time.time() - _t0_day1, 1)
+_stage_times["stage1"] = round(_time.time() - _t0_stage1, 1)
+_maybe_stop_after("1")
 
 
 # ─────────────────────────────────────────────────────────────
@@ -1312,7 +1504,7 @@ else:
 # Stage 2 — Risk Scoring
 # ─────────────────────────────────────────────────────────────
 print(f"\n[Stage 2] Running Risk Scoring Agent...")
-_t0_day2 = _time.time()
+_t0_stage2 = _time.time()
 
 BUSINESS_TAGS = {
     "spring":   "core", "boot": "core", "core": "core",
@@ -1380,36 +1572,37 @@ def score_dep(dep, vulns):
 
 scored = []
 for dep in compile_deps:
-    vulns = day1_deps[[d["packages"][0]["id"] for d in day1_deps].index(dep["purl"])]["vulnerabilities"] \
-            if dep["purl"] in [d["packages"][0]["id"] for d in day1_deps] else []
+    vulns = stage1_deps[[d["packages"][0]["id"] for d in stage1_deps].index(dep["purl"])]["vulnerabilities"] \
+            if dep["purl"] in [d["packages"][0]["id"] for d in stage1_deps] else []
     result = score_dep(dep, vulns)
     if result:
         scored.append(result)
 
 scored.sort(key=lambda x: x["composite_risk_score"], reverse=True)
 
-day2 = {
+stage2 = {
     "scan_date": SCAN_DATE, "project": project,
     "scoring_model_version": "1.0",
     "dependencies": scored,
 }
-day2_path = os.path.join(OUT, "risk-scores.json")
-with open(day2_path, "w", encoding="utf-8") as f:
-    json.dump(day2, f, indent=2)
+stage2_path = os.path.join(OUT, "risk-scores.json")
+with open(stage2_path, "w", encoding="utf-8") as f:
+    json.dump(stage2, f, indent=2)
 
 tier_counts = Counter(d["risk_tier"] for d in scored)
 print(f"  Scored {len(scored)} vulnerable dependencies")
 print(f"    CRITICAL:{tier_counts.get('CRITICAL',0)}  HIGH:{tier_counts.get('HIGH',0)}  "
       f"MEDIUM:{tier_counts.get('MEDIUM',0)}  LOW:{tier_counts.get('LOW',0)}")
 print(f"  Written: risk-scores.json")
-_stage_times["day2"] = round(_time.time() - _t0_day2, 1)
+_stage_times["stage2"] = round(_time.time() - _t0_stage2, 1)
+_maybe_stop_after("2")
 
 
 # ─────────────────────────────────────────────────────────────
 # STAGE 3 — Supply-Chain Audit
 # ─────────────────────────────────────────────────────────────
 print(f"\n[Stage 3] Running Supply-Chain Audit Plugin...")
-_t0_day3 = _time.time()
+_t0_stage3 = _time.time()
 
 # Load policy.json early so Stage 3 and later stages can all read it
 _pol_cfg = {}
@@ -1453,9 +1646,10 @@ for dep in compile_deps:
         })
 
 # ── 3c: Real license checking via package registry ────────────
-print(f"  Checking licenses for up to 30 compile-scope deps...")
+_lic_limit = int(_pol_cfg.get("license_check_limit", len(compile_deps)))
+print(f"  Checking licenses for {min(_lic_limit, len(compile_deps))} compile-scope deps...")
 _lic_checked = 0
-for dep in compile_deps[:30]:
+for dep in compile_deps[:_lic_limit]:
     if dep["version"] == "UNKNOWN":
         continue
     lic = lookup_license_for_dep(dep)
@@ -1492,7 +1686,7 @@ if _typo_found:
 audit_result = "BLOCKED" if violations else "PASSED"
 _ecosystems_found = list(dict.fromkeys(d.get("ecosystem", ECOSYSTEM) for d in compile_deps))
 
-day3 = {
+stage3 = {
     "audit_date":       SCAN_DATE,
     "project":          project,
     "language":         LANGUAGE,
@@ -1506,9 +1700,9 @@ day3 = {
         "ecosystems":      _ecosystems_found,
     },
 }
-day3_path = os.path.join(OUT, "audit-report.json")
-with open(day3_path, "w", encoding="utf-8") as f:
-    json.dump(day3, f, indent=2)
+stage3_path = os.path.join(OUT, "audit-report.json")
+with open(stage3_path, "w", encoding="utf-8") as f:
+    json.dump(stage3, f, indent=2)
 
 print(f"  Audit result : {audit_result}")
 print(f"  Violations   : {len(violations)}   Warnings: {len(warnings)}")
@@ -1578,7 +1772,7 @@ secret_sev = Counter(f["severity"] for f in secret_findings)
 secret_result = "BLOCKED" if any(sev_order.get(f["severity"], 0) >= 2
                                   for f in secret_findings) else "CLEAN"
 
-day35 = {
+stage35 = {
     "scan_date":      SCAN_DATE,
     "project":        project,
     "scanner":        "built-in",
@@ -1592,9 +1786,9 @@ day35 = {
     "findings":       secret_findings[:20],
     "files_scanned":  secret_files_scanned,
 }
-day35_path = os.path.join(OUT, "secret-scan-report.json")
-with open(day35_path, "w", encoding="utf-8") as f:
-    json.dump(day35, f, indent=2)
+stage35_path = os.path.join(OUT, "secret-scan-report.json")
+with open(stage35_path, "w", encoding="utf-8") as f:
+    json.dump(stage35, f, indent=2)
 print(f"  Files scanned: {secret_files_scanned}  |  Result: {secret_result}")
 print(f"    CRITICAL:{secret_sev.get('CRITICAL',0)}  HIGH:{secret_sev.get('HIGH',0)}  "
       f"MEDIUM:{secret_sev.get('MEDIUM',0)}")
@@ -1724,7 +1918,7 @@ if _max_risk_threshold is not None:
         })
 
 policy_result = "FAIL" if pol_violations else ("WARN" if pol_warnings else "PASS")
-day37 = {
+stage37 = {
     "evaluation_date": SCAN_DATE,
     "project":         project,
     "policy_version":  "1.0",
@@ -1741,16 +1935,17 @@ day37 = {
                      if not any(v["policy_id"] == p["id"]
                                 for v in pol_violations + pol_warnings)],
 }
-day37_path = os.path.join(OUT, "policy-report.json")
-with open(day37_path, "w", encoding="utf-8") as f:
-    json.dump(day37, f, indent=2)
+stage37_path = os.path.join(OUT, "policy-report.json")
+with open(stage37_path, "w", encoding="utf-8") as f:
+    json.dump(stage37, f, indent=2)
 print(f"  Result       : {policy_result}")
 print(f"    FAIL:{len(pol_violations)}  WARN:{len(pol_warnings)}  "
-      f"PASS:{day37['summary']['rules_passed']}")
+      f"PASS:{stage37['summary']['rules_passed']}")
 if pol_violations:
     for pv in pol_violations:
         print(f"    [FAIL] {pv['policy_id']}: {pv['detail']}")
 print(f"  Written: policy-report.json")
+_maybe_stop_after("3.7")
 
 
 # ─────────────────────────────────────────────────────────────
@@ -1863,7 +2058,7 @@ new_baseline = {
 with open(BASELINE_PATH, "w", encoding="utf-8") as f:
     json.dump(new_baseline, f, indent=2)
 
-day39 = {
+stage39 = {
     "snapshot_date": SCAN_DATE,
     "baseline_date": prev_baseline_date,
     "project":       project,
@@ -1884,9 +2079,9 @@ day39 = {
     "downgraded": drift_downgraded[:10],
     "risk_flag":  drift_risk_flags > 0,
 }
-day39_path = os.path.join(OUT, "drift-report.json")
-with open(day39_path, "w", encoding="utf-8") as f:
-    json.dump(day39, f, indent=2)
+stage39_path = os.path.join(OUT, "drift-report.json")
+with open(stage39_path, "w", encoding="utf-8") as f:
+    json.dump(stage39, f, indent=2)
 print(f"  Written: drift-report.json")
 if drift_mode == "DIFF":
     print(f"  Updated: dependency-baseline.json")
@@ -1894,14 +2089,15 @@ if drift_mode == "DIFF":
         print(f"  [!] {drift_risk_flags} newly added/upgraded dep(s) have CVEs - review recommended")
 else:
     print(f"  Written: dependency-baseline.json  (initial baseline)")
-_stage_times["day3"] = round(_time.time() - _t0_day3, 1)
+_stage_times["stage3"] = round(_time.time() - _t0_stage3, 1)
+_maybe_stop_after("3")
 
 
 # ─────────────────────────────────────────────────────────────
 # STAGE 4 — Auto-Remediation: ONE consolidated PR
 # ─────────────────────────────────────────────────────────────
 print(f"\n[Stage 4] Running Auto-Remediation Agent (consolidated PR)...")
-_t0_day4 = _time.time()
+_t0_stage4 = _time.time()
 
 # Discover the repo's default branch
 default_branch = "main"
@@ -2010,29 +2206,30 @@ for upg in upgrades:
         "live":              bool(github_token),
     })
 
-day4 = {
+stage4 = {
     "manifest_date": SCAN_DATE,
     "project":       project,
     "dry_run":       not bool(github_token),
     "pull_requests": prs,
     "skipped":       skipped,
 }
-day4_path = os.path.join(OUT, "remediation-manifest.json")
-with open(day4_path, "w", encoding="utf-8") as f:
-    json.dump(day4, f, indent=2)
+stage4_path = os.path.join(OUT, "remediation-manifest.json")
+with open(stage4_path, "w", encoding="utf-8") as f:
+    json.dump(stage4, f, indent=2)
 
 cves_fixed = set(c for p in prs for c in p["cves_fixed"])
 mode_label = "real GitHub PRs" if github_token else "dry-run plan"
 print(f"  {len(prs)} {mode_label} | {len(cves_fixed)} CVEs covered | {len(skipped)} skipped")
 print(f"  Written: remediation-manifest.json")
-_stage_times["day4"] = round(_time.time() - _t0_day4, 1)
+_stage_times["stage4"] = round(_time.time() - _t0_stage4, 1)
+_maybe_stop_after("4")
 
 
 # ─────────────────────────────────────────────────────────────
 # STAGE 5 — PR Validation
 # ─────────────────────────────────────────────────────────────
 print(f"\n[Stage 5] Running PR Validation Agent...")
-_t0_day5 = _time.time()
+_t0_stage5 = _time.time()
 
 _mvn_avail   = bool(_shutil_mod.which("mvn"))
 _git_avail   = bool(_shutil_mod.which("git"))
@@ -2301,17 +2498,18 @@ all_covs    = [g["line_coverage_pct"] for p in val_prs
                for g in p["gates"]
                if g["gate"] == "jacoco-coverage" and g.get("line_coverage_pct") is not None]
 
-day5 = {
+stage5 = {
     "validation_date": SCAN_DATE, "project": project,
     "total_prs": len(val_prs),
     "summary": {"auto_merged": auto_merged, "pending_approval": pending, "blocked": blocked},
     "pull_requests": val_prs,
 }
-day5_path = os.path.join(OUT, "validation-report.json")
-with open(day5_path, "w", encoding="utf-8") as f:
-    json.dump(day5, f, indent=2)
+stage5_path = os.path.join(OUT, "validation-report.json")
+with open(stage5_path, "w", encoding="utf-8") as f:
+    json.dump(stage5, f, indent=2)
 
-_stage_times["day5"] = round(_time.time() - _t0_day5, 1)
+_stage_times["stage5"] = round(_time.time() - _t0_stage5, 1)
+_maybe_stop_after("5")
 _gates_mode = ("mvn+grype+jacoco+OWASP" if (_mvn_avail and _grype_avail)
                else "mvn+OWASP" if _mvn_avail else "OWASP-only (mvn/grype not installed)")
 print(f"  Validated {len(val_prs)} PRs — auto-merged:{auto_merged}  pending:{pending}  blocked:{blocked}")
@@ -2323,7 +2521,7 @@ print(f"  Written: validation-report.json")
 # STAGE 6 — E2E Stress Test
 # ─────────────────────────────────────────────────────────────
 print(f"\n[Stage 6] Running E2E Stress Test...")
-_t0_day6 = _time.time()
+_t0_stage6 = _time.time()
 
 
 _PIPELINE_STAGES = [
@@ -2395,19 +2593,19 @@ all_repos = [{
     "total_duration_seconds": round(sum(v for v in _stage_times.values()), 1),
     "stages": _main_stages,
     "scenario_assertions": [
-        {"assertion": "day1_scan_complete",
+        {"assertion": "stage1_scan_complete",
          "expected": "dependency-check-report.json produced",
          "actual": f"{_cve_count} CVEs found ({_crit_count} Critical, {_high_count} High)",
          "passed": True},
-        {"assertion": "day2_risk_scored",
+        {"assertion": "stage2_risk_scored",
          "expected": "risk-scores.json produced",
          "actual": f"{len(scored)} deps scored, {tier_counts.get('CRITICAL',0)} CRITICAL tier",
          "passed": True},
-        {"assertion": "day4_remediation",
+        {"assertion": "stage4_remediation",
          "expected": "remediation-manifest.json produced",
          "actual": f"{len(prs)} upgrades planned",
          "passed": True},
-        {"assertion": "day5_gates",
+        {"assertion": "stage5_gates",
          "expected": "validation-report.json produced",
          "actual": f"{auto_merged} auto-merged, {pending} pending, {blocked} blocked",
          "passed": True},
@@ -2436,11 +2634,11 @@ _repos_partial = sum(1 for r in all_repos if r["overall_status"] == "PARTIAL")
 _repos_failed  = sum(1 for r in all_repos if r["overall_status"] in ("FAIL", "ERROR"))
 _total_dur     = round(sum(r.get("total_duration_seconds") or 0 for r in all_repos), 1)
 
-day6 = {
+stage6 = {
     "batch_label":     f"e2e-{project}-{SCAN_DATE[:10]}",
     "run_date":        SCAN_DATE,
     "total_repos":     len(all_repos),
-    "pipeline_stages": ["day1", "day2", "day3", "day4", "day5"],
+    "pipeline_stages": ["stage1", "stage2", "stage3", "stage4", "stage5"],
     "summary": {
         "repos_fully_passed":    _repos_passed,
         "repos_partially_passed": _repos_partial,
@@ -2453,16 +2651,17 @@ day6 = {
     "timing_summary": {
         "by_stage": {
             _dk: {"duration_seconds": _stage_times[_dk]}
-            for _dk in ["day1", "day2", "day3", "day4", "day5"]
+            for _dk in ["stage1", "stage2", "stage3", "stage4", "stage5"]
             if _dk in _stage_times
         }
     },
 }
-day6_path = os.path.join(OUT, "e2e-report.json")
-with open(day6_path, "w", encoding="utf-8") as f:
-    json.dump(day6, f, indent=2)
+stage6_path = os.path.join(OUT, "e2e-report.json")
+with open(stage6_path, "w", encoding="utf-8") as f:
+    json.dump(stage6, f, indent=2)
 
-_stage_times["day6"] = round(_time.time() - _t0_day6, 1)
+_stage_times["stage6"] = round(_time.time() - _t0_stage6, 1)
+_maybe_stop_after("6")
 print(f"  E2E: {len(all_repos)} repo(s) — {_repos_passed} passed, "
       f"{_repos_partial} partial, {_repos_failed} failed  "
       f"(total {_total_dur}s)")
@@ -2568,7 +2767,7 @@ validation_summary = {
 e2e_summary = {
     "available":              True,
     "repos_tested":           1,
-    "repos_fully_passed":     day6["summary"]["repos_fully_passed"],
+    "repos_fully_passed":     stage6["summary"]["repos_fully_passed"],
     "repos_errored":          0,
     "scenarios_covered":      ["live-repo"],
     "total_duration_seconds": 120,
@@ -2719,6 +2918,15 @@ with open(html_path, "w", encoding="utf-8") as f:
     f.write(html)
 print(f"  Written: dependency-health-report.html  ({os.path.getsize(html_path)//1024} KB)")
 
+# Push the HTML report to a dedicated branch in the scanned repo (requires token)
+_html_publish_result = None
+if github_token and not scan_only:
+    _html_publish_result = _publish_html_report(
+        github_token, owner, repo, used_branch,
+        html_path, project, SCAN_DATE)
+else:
+    print("  [Stage 7] Skipping HTML publish to repo — no token provided (dry-run mode)")
+
 # ─────────────────────────────────────────────────────────────
 # audit-trail.json
 # ─────────────────────────────────────────────────────────────
@@ -2774,6 +2982,8 @@ audit_trail = {
     "stage1_6_grype":      grype_stage_result,
     "report_outputs": {
         "html":                    "dependency-health-report.html",
+        "html_published_branch":   _html_publish_result.get("branch") if _html_publish_result else None,
+        "html_published_url":      _html_publish_result.get("url")    if _html_publish_result else None,
         "sbom_cyclonedx":          "sbom-cyclonedx.json",
         "sbom_syft":               "sbom-syft.json" if _syft_ok else None,
         "grype_report":            "grype-report.json" if grype_stage_result.get("status") not in ("SKIPPED", "ERROR") else None,
@@ -2923,3 +3133,7 @@ for fname in ["pom.xml", "dependency-check-report.json", "sbom-cyclonedx.json",
 print(f"\n  Open report:")
 print(f"    {html_path}")
 print()
+
+_timeout_timer.cancel()
+# Exit codes: 0=clean, 2=policy violated, 3=scan error, 4=no manifest, 5=timeout
+sys.exit(2 if pol_violations else 0)

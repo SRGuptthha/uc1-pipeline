@@ -1,4 +1,4 @@
-# Scenario: Mixed — Assertions & Expected Behaviour
+﻿# Scenario: Mixed — Assertions & Expected Behaviour
 
 ## Profile
 A Java project with a mix of clean and vulnerable dependencies — some up-to-date,
@@ -31,18 +31,18 @@ Primary: `https://github.com/broadinstitute/gatk`
 ## Assertion Checks (Python)
 
 ```python
-def assert_mixed(day1_report, risk_scores, remediation_manifest,
+def assert_mixed(stage1_report, risk_scores, remediation_manifest,
                  validation_report, health_score):
     results = []
 
     # MX-1
-    all_vulns = [v for dep in day1_report["dependencies"]
+    all_vulns = [v for dep in stage1_report["dependencies"]
                  for v in dep.get("vulnerabilities", [])]
     results.append(("MX-1", len(all_vulns) >= 1,
                     f"{len(all_vulns)} total CVEs found"))
 
     # MX-2
-    clean_deps = [dep for dep in day1_report["dependencies"]
+    clean_deps = [dep for dep in stage1_report["dependencies"]
                   if len(dep.get("vulnerabilities", [])) == 0]
     results.append(("MX-2", len(clean_deps) >= 1,
                     f"{len(clean_deps)} clean deps (expected ≥ 1)"))
@@ -55,7 +55,7 @@ def assert_mixed(day1_report, risk_scores, remediation_manifest,
                     f"Tiers present: {tiers}"))
 
     # MX-5
-    total_deps    = len(day1_report.get("dependencies", []))
+    total_deps    = len(stage1_report.get("dependencies", []))
     upgrade_count = len(remediation_manifest.get("pull_requests", []))
     results.append(("MX-5", 1 <= upgrade_count < total_deps,
                     f"{upgrade_count} upgrades out of {total_deps} deps"))
@@ -77,7 +77,7 @@ vulnerable deps** and leave clean deps untouched. Verify this explicitly:
 ```python
 upgraded_artifacts = {pr["artifact"] for pr in remediation_manifest["pull_requests"]}
 clean_artifacts    = {dep["groupId"] + ":" + dep["artifactId"]
-                      for dep in day1_report["dependencies"]
+                      for dep in stage1_report["dependencies"]
                       if len(dep.get("vulnerabilities", [])) == 0}
 
 overlap = upgraded_artifacts & clean_artifacts

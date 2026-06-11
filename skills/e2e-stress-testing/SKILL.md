@@ -1,4 +1,4 @@
----
+﻿---
 name: e2e-stress-testing
 description: >
   Full end-to-end pipeline stress test across 5+ real Java repos — CVE-heavy, zero-CVE,
@@ -32,8 +32,8 @@ Accept repos as a mixed list of GitHub URLs and local paths:
     { "id": "repo-4", "source": "/local/path/to/malformed-pom-project",    "scenario": "malformed-pom" },
     { "id": "repo-5", "source": "https://github.com/org/mixed-issues-app", "scenario": "mixed" }
   ],
-  "batch_label": "day6-stress-run-<DATE>",
-  "pipeline_stages": ["day1", "day2", "day3", "day4", "day5"]
+  "batch_label": "stage6-stress-run-<DATE>",
+  "pipeline_stages": ["stage1", "stage2", "stage3", "stage4", "stage5"]
 }
 ```
 
@@ -95,7 +95,7 @@ For each repo:
 Record per stage:
 ```json
 {
-  "stage": "day1",
+  "stage": "stage1",
   "status": "PASS | FAIL | ERROR | SKIP",
   "duration_seconds": 47,
   "detail": "<brief summary>",
@@ -123,7 +123,7 @@ behaved correctly. Read `scenarios/<SCENARIO>.md` for full assertion sets.
 Assertion result:
 ```json
 {
-  "assertion": "day1_finds_critical_cves",
+  "assertion": "stage1_finds_critical_cves",
   "expected": "≥ 5 Critical/High CVEs",
   "actual": "8 Critical/High CVEs found",
   "passed": true
@@ -196,7 +196,7 @@ After all repos complete (or user stops), generate `e2e-report.json` and Markdow
 
 ### Overall Results
 
-| Repo | Scenario | Day1 | Day2 | Day3 | Day4 | Day5 | Assertions | Total Time |
+| Repo | Scenario | stage1 | stage2 | stage3 | stage4 | stage5 | Assertions | Total Time |
 |------|----------|------|------|------|------|------|------------|------------|
 | cve-heavy-app | cve-heavy | ✅ | ✅ | ✅ | ✅ | ✅ | 5/5 ✅ | 8m 14s |
 | clean-baseline | zero-cve | ✅ | ✅ | ✅ | ✅ | ✅ | 4/4 ✅ | 3m 42s |

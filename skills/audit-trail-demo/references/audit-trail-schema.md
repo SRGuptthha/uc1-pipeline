@@ -1,4 +1,4 @@
-# Audit Trail Schema — audit-trail.json
+﻿# Audit Trail Schema — audit-trail.json
 
 The permanent machine-readable record of the full pipeline run. Suitable for compliance
 archiving, future pipeline comparisons, and audit queries.
@@ -21,7 +21,7 @@ archiving, future pipeline comparisons, and audit queries.
     "improvement": 46
   },
 
-  "day1_owasp": {
+  "stage1_owasp": {
     "scan_date": "<ISO-DATE>",
     "total_deps_scanned": 142,
     "cve_summary": {
@@ -37,7 +37,7 @@ archiving, future pipeline comparisons, and audit queries.
     "artifact": "dependency-check-report/dependency-check-report.json"
   },
 
-  "day2_risk_scoring": {
+  "stage2_risk_scoring": {
     "total_scored": 142,
     "tier_breakdown": {
       "CRITICAL": 3, "HIGH": 8, "MEDIUM": 21, "LOW": 110
@@ -49,7 +49,7 @@ archiving, future pipeline comparisons, and audit queries.
     "artifact": "risk-scores.json"
   },
 
-  "day3_audit": {
+  "stage3_audit": {
     "result": "BLOCKED | PASSED",
     "total_components": 142,
     "violations": {
@@ -61,7 +61,7 @@ archiving, future pipeline comparisons, and audit queries.
     "artifact": "audit-report.json"
   },
 
-  "day4_remediation": {
+  "stage4_remediation": {
     "dry_run": false,
     "total_upgrades": 11,
     "bump_breakdown": { "PATCH": 6, "MINOR": 4, "MAJOR": 1 },
@@ -71,7 +71,7 @@ archiving, future pipeline comparisons, and audit queries.
     "artifact": "remediation-manifest.json"
   },
 
-  "day5_validation": {
+  "stage5_validation": {
     "total_prs": 11,
     "auto_merged": 9,
     "pending_human_approval": 1,
@@ -86,7 +86,7 @@ archiving, future pipeline comparisons, and audit queries.
     "artifact": "validation-report.json"
   },
 
-  "day6_e2e": {
+  "stage6_e2e": {
     "available": true,
     "repos_tested": 5,
     "repos_fully_passed": 3,

@@ -1,4 +1,4 @@
-# Timing Thresholds — E2E Stress Testing
+﻿# Timing Thresholds — E2E Stress Testing
 
 Flag any stage that exceeds its WARNING or CRITICAL threshold in the e2e report.
 Thresholds are per-repo; repos with 100+ deps may legitimately exceed WARNING.
@@ -42,7 +42,7 @@ Limit: ~10 req/s. Add `sleep 0.1` between calls for large dependency lists (> 50
 
 ```json
 {
-  "stage": "day1",
+  "stage": "stage1",
   "duration_seconds": 847,
   "timing_flag": "WARNING",
   "timing_note": "Exceeded 6 min threshold — likely first run with DB download"

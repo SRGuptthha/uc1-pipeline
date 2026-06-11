@@ -1,4 +1,4 @@
-# Scenario: Zero-CVE (Clean Baseline) — Assertions & Expected Behaviour
+﻿# Scenario: Zero-CVE (Clean Baseline) — Assertions & Expected Behaviour
 
 ## Profile
 A well-maintained Java project with up-to-date dependencies and no known CVEs.
@@ -37,12 +37,12 @@ mvn versions:display-dependency-updates --batch-mode 2>/dev/null | grep -c "\->"
 ## Assertion Checks (Python)
 
 ```python
-def assert_zero_cve(day1_report, risk_scores, remediation_manifest,
+def assert_zero_cve(stage1_report, risk_scores, remediation_manifest,
                     validation_report, audit_report):
     results = []
 
     # ZC-1
-    critical_cves = [v for dep in day1_report["dependencies"]
+    critical_cves = [v for dep in stage1_report["dependencies"]
                      for v in dep.get("vulnerabilities", [])
                      if v.get("severity") == "CRITICAL"]
     results.append(("ZC-1", len(critical_cves) == 0,

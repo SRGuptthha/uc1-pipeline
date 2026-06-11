@@ -1,13 +1,13 @@
-# E2E Report Schema — e2e-report.json
+﻿# E2E Report Schema — e2e-report.json
 
 Consumed by Stage 7 Audit Trail skill.
 
 ```json
 {
-  "batch_label": "day6-stress-run-2024-01-15",
+  "batch_label": "stage6-stress-run-2024-01-15",
   "run_date": "<ISO-DATE>",
   "total_repos": 5,
-  "pipeline_stages": ["day1", "day2", "day3", "day4", "day5"],
+  "pipeline_stages": ["stage1", "stage2", "stage3", "stage4", "stage5"],
   "summary": {
     "repos_fully_passed": 2,
     "repos_partially_passed": 2,
@@ -25,15 +25,15 @@ Consumed by Stage 7 Audit Trail skill.
       "total_duration_seconds": 494,
       "stages": [
         {
-          "stage": "day1",
+          "stage": "stage1",
           "status": "PASS",
           "duration_seconds": 187,
           "timing_flag": null,
           "detail": "23 CVEs found (8 Critical, 11 High, 4 Medium)",
-          "artifacts": ["repo-1-day1-output/dependency-check-report.json"]
+          "artifacts": ["repo-1-stage1-output/dependency-check-report.json"]
         },
         {
-          "stage": "day2",
+          "stage": "stage2",
           "status": "PASS",
           "duration_seconds": 12,
           "timing_flag": null,
@@ -41,7 +41,7 @@ Consumed by Stage 7 Audit Trail skill.
           "artifacts": ["repo-1-risk-scores.json"]
         },
         {
-          "stage": "day3",
+          "stage": "stage3",
           "status": "PASS",
           "duration_seconds": 38,
           "timing_flag": null,
@@ -49,7 +49,7 @@ Consumed by Stage 7 Audit Trail skill.
           "artifacts": ["repo-1-sbom.cdx.json", "repo-1-audit-report.json"]
         },
         {
-          "stage": "day4",
+          "stage": "stage4",
           "status": "PASS",
           "duration_seconds": 43,
           "timing_flag": null,
@@ -57,7 +57,7 @@ Consumed by Stage 7 Audit Trail skill.
           "artifacts": ["repo-1-remediation-manifest.json"]
         },
         {
-          "stage": "day5",
+          "stage": "stage5",
           "status": "PASS",
           "duration_seconds": 214,
           "timing_flag": null,
@@ -67,19 +67,19 @@ Consumed by Stage 7 Audit Trail skill.
       ],
       "scenario_assertions": [
         {
-          "assertion": "day1_finds_critical_cves",
+          "assertion": "stage1_finds_critical_cves",
           "expected": "≥ 5 Critical/High CVEs",
           "actual": "19 Critical/High CVEs",
           "passed": true
         },
         {
-          "assertion": "day2_scores_critical_deps",
+          "assertion": "stage2_scores_critical_deps",
           "expected": "≥ 1 dep with score ≥ 80",
           "actual": "3 deps with score ≥ 80",
           "passed": true
         },
         {
-          "assertion": "day4_produces_upgrade_plan",
+          "assertion": "stage4_produces_upgrade_plan",
           "expected": "≥ 1 upgrade in remediation manifest",
           "actual": "8 upgrades planned",
           "passed": true
@@ -89,16 +89,16 @@ Consumed by Stage 7 Audit Trail skill.
   ],
   "timing_summary": {
     "by_stage": {
-      "day1": { "min_seconds": 47, "max_seconds": 252, "avg_seconds": 138 },
-      "day2": { "min_seconds": 8,  "max_seconds": 34,  "avg_seconds": 19  },
-      "day3": { "min_seconds": 12, "max_seconds": 63,  "avg_seconds": 38  },
-      "day4": { "min_seconds": 5,  "max_seconds": 48,  "avg_seconds": 24  },
-      "day5": { "min_seconds": 72, "max_seconds": 295, "avg_seconds": 161 }
+      "stage1": { "min_seconds": 47, "max_seconds": 252, "avg_seconds": 138 },
+      "stage2": { "min_seconds": 8,  "max_seconds": 34,  "avg_seconds": 19  },
+      "stage3": { "min_seconds": 12, "max_seconds": 63,  "avg_seconds": 38  },
+      "stage4": { "min_seconds": 5,  "max_seconds": 48,  "avg_seconds": 24  },
+      "stage5": { "min_seconds": 72, "max_seconds": 295, "avg_seconds": 161 }
     },
     "timing_flags": [
       {
         "repo_id": "repo-3",
-        "stage": "day1",
+        "stage": "stage1",
         "flag": "WARNING",
         "duration_seconds": 412,
         "note": "First run with DB download on large repo (100+ deps)"
@@ -108,7 +108,7 @@ Consumed by Stage 7 Audit Trail skill.
   "failures": [
     {
       "repo_id": "repo-4",
-      "stage": "day2",
+      "stage": "stage2",
       "type": "ERROR",
       "message": "JSON parse failure on OWASP output — partial scan due to malformed pom.xml",
       "graceful": true,

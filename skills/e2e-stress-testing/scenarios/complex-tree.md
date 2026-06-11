@@ -1,4 +1,4 @@
-# Scenario: Complex Dependency Tree — Assertions & Expected Behaviour
+﻿# Scenario: Complex Dependency Tree — Assertions & Expected Behaviour
 
 ## Profile
 A large Java project with deep transitive dependencies (50+ compile deps) and
@@ -43,12 +43,12 @@ mvn dependency:list -DincludeScope=compile --batch-mode 2>/dev/null \
 ```python
 import json, time
 
-def assert_complex_tree(day1_report, risk_scores, sbom, audit_report,
+def assert_complex_tree(stage1_report, risk_scores, sbom, audit_report,
                         remediation_manifest, stage_timings):
     results = []
 
     # CT-1
-    total_deps = len(day1_report.get("dependencies", []))
+    total_deps = len(stage1_report.get("dependencies", []))
     results.append(("CT-1", total_deps >= 50,
                     f"{total_deps} deps scanned (expected ≥ 50)"))
 
@@ -80,10 +80,10 @@ def assert_complex_tree(day1_report, risk_scores, sbom, audit_report,
                     f"{upgrades_attempted} version lookups attempted"))
 
     # CT-8 — timing check
-    day1_duration = stage_timings.get("day1", 0)
+    stage1_duration = stage_timings.get("stage1", 0)
     # 25 min = 1500s WARNING threshold from timing-thresholds.md
-    results.append(("CT-8", day1_duration <= 1500,
-                    f"Stage 1 took {day1_duration}s ({'OK' if day1_duration <= 1500 else 'WARNING: exceeded 25min'})"))
+    results.append(("CT-8", stage1_duration <= 1500,
+                    f"Stage 1 took {stage1_duration}s ({'OK' if stage1_duration <= 1500 else 'WARNING: exceeded 25min'})"))
 
     return results
 ```

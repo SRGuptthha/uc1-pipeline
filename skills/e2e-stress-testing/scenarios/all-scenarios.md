@@ -1,4 +1,4 @@
-# Scenario: Zero-CVE — Assertions
+﻿# Scenario: Zero-CVE — Assertions
 
 ## Profile
 A well-maintained Java project with up-to-date dependencies. Validates that the pipeline
@@ -15,8 +15,8 @@ completes cleanly with no false positives, no spurious blocks, and green gates t
 | ZC-5 | Stage 5 | All gates | mvn test ✅ OWASP ✅ Grype ✅ JaCoCo ≥ 80% ✅ |
 
 ```python
-def assert_zero_cve(day1_report, risk_scores, audit_report):
-    cves = [v for dep in day1_report["dependencies"]
+def assert_zero_cve(stage1_report, risk_scores, audit_report):
+    cves = [v for dep in stage1_report["dependencies"]
               for v in dep.get("vulnerabilities", [])
               if v.get("severity") in ("CRITICAL", "HIGH")]
     assert_zc1 = ("ZC-1", len(cves) == 0, f"{len(cves)} Critical/High CVEs (expected 0)")
@@ -50,8 +50,8 @@ Validates SBOM completeness, transitive scoring accuracy, and scan performance u
 | CT-5 | Stage 5 | OWASP scan time | Completes within WARNING threshold (6 min) |
 
 ```python
-def assert_complex_tree(day1_report, risk_scores, sbom):
-    dep_count = len(day1_report["dependencies"])
+def assert_complex_tree(stage1_report, risk_scores, sbom):
+    dep_count = len(stage1_report["dependencies"])
     assert_ct1 = ("CT-1", dep_count >= 50, f"{dep_count} deps scanned")
 
     transitive = [d for d in risk_scores["dependencies"]
@@ -164,8 +164,8 @@ remediation paths — only some deps get upgrades, others are already safe.
 | MX-4 | Stage 5 | Gate results | At least 3 of 4 gates pass |
 
 ```python
-def assert_mixed(day1_report, risk_scores, remediation_manifest, validation_result):
-    cve_count = len([v for dep in day1_report["dependencies"]
+def assert_mixed(stage1_report, risk_scores, remediation_manifest, validation_result):
+    cve_count = len([v for dep in stage1_report["dependencies"]
                        for v in dep.get("vulnerabilities", [])])
     assert_mx1 = ("MX-1", 1 <= cve_count <= 10, f"{cve_count} CVEs found")
 

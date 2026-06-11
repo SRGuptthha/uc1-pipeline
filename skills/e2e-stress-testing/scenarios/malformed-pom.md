@@ -1,4 +1,4 @@
-# Scenario: Malformed pom.xml — Assertions & Expected Behaviour
+﻿# Scenario: Malformed pom.xml — Assertions & Expected Behaviour
 
 ## Profile
 A synthetic Java project with a deliberately broken `pom.xml`. Validates that the
@@ -80,7 +80,7 @@ mkdir -p /tmp/e2e/malformed-pom-project
 
 ```python
 def assert_malformed_pom(pipeline_stdout, pipeline_exit_code,
-                          day1_report, risk_scores, sbom):
+                          stage1_report, risk_scores, sbom):
     results = []
 
     # MP-1: no unhandled crash (exit 0 or 1 — not exception traceback)

@@ -1,4 +1,4 @@
-# Live Demo Script — Audit Trail & Demo Readiness
+﻿# Live Demo Script — Audit Trail & Demo Readiness
 
 Full talking-point narration for a live audience demo. Estimated total runtime: 25–40 min
 depending on scan speed. Each stage has a setup note, audience line, and what to show.
@@ -28,7 +28,7 @@ depending on scan speed. Each stage has a setup note, audience line, and what to
 **Run:**
 ```bash
 dependency-check --project "live-demo" --scan . --format JSON \
-  --out ./demo-day1 --nvdApiKey $NVD_API_KEY
+  --out ./demo-stage1 --nvdApiKey $NVD_API_KEY
 ```
 
 **While running, say:**

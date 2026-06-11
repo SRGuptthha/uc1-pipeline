@@ -1,4 +1,4 @@
----
+﻿---
 name: audit-trail-demo
 description: >
   Aggregate all scan results into a single dependency health report (PDF + HTML) and run a
@@ -46,12 +46,12 @@ Which demo mode?
 
 ```python
 ARTIFACT_MAP = {
-    "day1": "./dependency-check-report/dependency-check-report.json",
-    "day2": "./risk-scores.json",
-    "day3": "./audit-report.json",
-    "day4": "./remediation-manifest.json",
-    "day5": "./validation-report.json",
-    "day6": "./e2e-report.json",   # optional — include if exists
+    "stage1": "./dependency-check-report/dependency-check-report.json",
+    "stage2": "./risk-scores.json",
+    "stage3": "./audit-report.json",
+    "stage4": "./remediation-manifest.json",
+    "stage5": "./validation-report.json",
+    "stage6": "./e2e-report.json",   # optional — include if exists
 }
 
 def collect_artifacts(artifact_map):
@@ -82,15 +82,15 @@ Parse all artifacts and build a unified findings object:
 ```python
 def aggregate(artifacts):
     return {
-        "project":           extract_project_name(artifacts["day1"]),
-        "scan_date":         extract_scan_date(artifacts["day1"]),
-        "total_deps_scanned": count_deps(artifacts["day1"]),
-        "cve_summary":       extract_cve_summary(artifacts["day1"]),
-        "risk_summary":      extract_risk_summary(artifacts["day2"]),
-        "audit_summary":     extract_audit_summary(artifacts["day3"]),
-        "remediation_summary": extract_remediation_summary(artifacts["day4"]),
-        "validation_summary":  extract_validation_summary(artifacts["day5"]),
-        "e2e_summary":       extract_e2e_summary(artifacts.get("day6")),
+        "project":           extract_project_name(artifacts["stage1"]),
+        "scan_date":         extract_scan_date(artifacts["stage1"]),
+        "total_deps_scanned": count_deps(artifacts["stage1"]),
+        "cve_summary":       extract_cve_summary(artifacts["stage1"]),
+        "risk_summary":      extract_risk_summary(artifacts["stage2"]),
+        "audit_summary":     extract_audit_summary(artifacts["stage3"]),
+        "remediation_summary": extract_remediation_summary(artifacts["stage4"]),
+        "validation_summary":  extract_validation_summary(artifacts["stage5"]),
+        "e2e_summary":       extract_e2e_summary(artifacts.get("stage6")),
         "pipeline_health":   compute_pipeline_health(artifacts),
     }
 ```

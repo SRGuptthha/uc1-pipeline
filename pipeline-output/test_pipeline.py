@@ -661,6 +661,75 @@ class TestEdgeCases(unittest.TestCase):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Output file schema validation — skipped when files don't exist yet
+# ─────────────────────────────────────────────────────────────────────────────
+class TestOutputSchemas(unittest.TestCase):
+    """Validate structure of pipeline output files if they exist (run pipeline first)."""
+    _OUT = os.path.dirname(__file__)
+
+    def _load(self, filename):
+        path = os.path.join(self._OUT, filename)
+        if not os.path.exists(path):
+            self.skipTest(f"{filename} not present — run the pipeline first")
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+
+    def test_dependency_check_report_schema(self):
+        data = self._load("dependency-check-report.json")
+        self.assertIn("dependencies", data)
+        self.assertIsInstance(data["dependencies"], list)
+        for dep in data["dependencies"][:5]:
+            self.assertIn("vulnerabilities", dep, f"dep missing 'vulnerabilities': {dep.get('fileName')}")
+
+    def test_risk_scores_schema(self):
+        data = self._load("risk-scores.json")
+        self.assertIn("dependencies", data)
+        for dep in data["dependencies"][:5]:
+            self.assertIn("composite_risk_score", dep)
+            self.assertIn("risk_tier", dep)
+            self.assertIn(dep["risk_tier"], ("CRITICAL", "HIGH", "MEDIUM", "LOW"))
+
+    def test_audit_report_schema(self):
+        data = self._load("audit-report.json")
+        self.assertIn("result", data)
+        self.assertIn(data["result"], ("PASSED", "BLOCKED"))
+        self.assertIn("violations", data)
+        self.assertIsInstance(data["violations"], list)
+
+    def test_policy_report_schema(self):
+        data = self._load("policy-report.json")
+        self.assertIn("overall_result", data)
+        self.assertIn(data["overall_result"], ("PASS", "WARN", "FAIL"))
+        self.assertIn("violations", data)
+        self.assertIn("summary", data)
+
+    def test_remediation_manifest_schema(self):
+        data = self._load("remediation-manifest.json")
+        self.assertIn("pull_requests", data)
+        for pr in data["pull_requests"][:3]:
+            self.assertIn("artifact", pr)
+            self.assertIn("new_version", pr)
+            self.assertIn("bump_type", pr)
+            self.assertIn(pr["bump_type"], ("PATCH", "MINOR", "MAJOR"))
+
+    def test_sbom_cyclonedx_schema(self):
+        data = self._load("sbom-cyclonedx.json")
+        self.assertIn("components", data)
+        self.assertIn("bomFormat", data)
+        self.assertEqual(data["bomFormat"], "CycloneDX")
+
+    def test_sarif_report_schema(self):
+        data = self._load("sarif-report.sarif")
+        self.assertEqual(data.get("version"), "2.1.0")
+        self.assertIn("runs", data)
+        self.assertIsInstance(data["runs"], list)
+        self.assertGreater(len(data["runs"]), 0)
+        run = data["runs"][0]
+        self.assertIn("tool", run)
+        self.assertIn("results", run)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Runner — collects results and writes test-results.json for Stage 7 injection
 # ─────────────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
