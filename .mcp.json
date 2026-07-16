@@ -3,6 +3,17 @@
     "supply-chain-security": {
       "command": "python",
       "args": ["pipeline-output/mcp_server.py"]
+    },
+        "github": {
+      "type": "http",
+      "url": "https://api.githubcopilot.com/mcp"
+    },
+    "playwright": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@microsoft/mcp-server-playwright"
+      ]
     }
   }
 }
