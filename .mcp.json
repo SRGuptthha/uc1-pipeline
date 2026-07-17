@@ -1,19 +1,44 @@
 {
-  "mcpServers": {
-    "supply-chain-security": {
-      "command": "python",
-      "args": ["pipeline-output/mcp_server.py"]
-    },
+    "servers": {
+        "microsoft/playwright-mcp": {
+            "type": "stdio",
+            "command": "npx",
+            "args": [
+                "@playwright/mcp@latest"
+            ],
+            "gallery": "https://api.mcp.github.com",
+            "version": "0.0.1-seed"
+        },
+        "io.github.github/github-mcp-server": {
+            "type": "http",
+            "url": "https://api.githubcopilot.com/mcp/",
+            "gallery": "https://api.mcp.github.com",
+            "version": "1.6.0"
+        },
+        "supply-chain-security": {
+            "command": "python",
+            "args": [
+                "pipeline-output/mcp_server.py"
+            ]
+        },
+        "drawio": {
+            "command": "npx",
+            "args": [
+                "-y",
+                "@drawio/mcp"
+            ]
+        },
         "github": {
-      "type": "http",
-      "url": "https://api.githubcopilot.com/mcp"
+            "type": "http",
+            "url": "https://api.githubcopilot.com/mcp"
+        },
+        "playwright": {
+            "command": "npx",
+            "args": [
+                "-y",
+                "@microsoft/mcp-server-playwright"
+            ]
+        }
     },
-    "playwright": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "@microsoft/mcp-server-playwright"
-      ]
-    }
-  }
+    "inputs": []
 }
